@@ -1,1 +1,1 @@
-"""Shared models, clients, and reusable backend helpers."""
+"""Shared models, clients, prompts, and auth helpers."""

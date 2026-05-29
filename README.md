@@ -8,7 +8,7 @@ Accelerators Finder project described in `docs/proposal.md`.
 ```text
 src/api/        FastAPI application skeleton
 src/ingestion/  Azure Functions ingestion skeleton
-src/shared/     Shared models, clients, and prompts
+src/shared/     Shared models, clients, prompts, and auth
 frontend/       React + Vite + TypeScript frontend skeleton
 tests/          Pytest test suite
 ```
@@ -37,5 +37,5 @@ npm run build
 - `src/api/main.py` exposes a basic `/healthz` endpoint.
 - `src/api/config.py` loads settings with `pydantic-settings`.
 - `src/ingestion/function_app.py` provides an Azure Functions timer stub.
-- `src/shared/` holds shared Pydantic models and Azure client stubs.
+- `src/shared/` holds shared models, clients, prompts, and auth scaffolding.
 - `.github/workflows/ci.yml` runs backend checks and a frontend build.

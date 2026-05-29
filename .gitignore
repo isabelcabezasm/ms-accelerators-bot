@@ -82,6 +82,9 @@ ipython_config.py
 
 # Environments
 .env
+.env.local
+.env.*
+.env.*.local
 .envrc
 .venv
 env/
