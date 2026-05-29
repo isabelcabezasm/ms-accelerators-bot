@@ -32,6 +32,11 @@ class RateLimitSettings(BaseSettings):
         alias="RATE_LIMIT_WINDOW",
         ge=1,
     )
+    trusted_proxy_count: int = Field(
+        default=0,
+        alias="TRUSTED_PROXY_COUNT",
+        ge=0,
+    )
 
 
 class InMemoryRateLimiter:
@@ -70,26 +75,73 @@ class InMemoryRateLimiter:
 
 
 @lru_cache
+def get_rate_limit_settings() -> RateLimitSettings:
+    """Load and cache rate-limit settings for request handling."""
+
+    return RateLimitSettings()
+
+
+@lru_cache
 def get_rate_limiter() -> InMemoryRateLimiter:
     """Create and cache the configured in-memory rate limiter."""
 
-    settings = RateLimitSettings()
+    settings = get_rate_limit_settings()
     return InMemoryRateLimiter(
         max_requests=settings.rate_limit_requests,
         window_seconds=settings.rate_limit_window,
     )
 
 
-def get_request_identifier(request: Request) -> str:
-    """Derive a stable caller identifier from proxy or client metadata."""
+def get_direct_client_host(request: Request) -> str | None:
+    """Return the peer address reported by the ASGI server."""
 
-    forwarded_for = request.headers.get("x-forwarded-for", "").strip()
-    if forwarded_for:
-        return forwarded_for.split(",", maxsplit=1)[0].strip() or "anonymous"
     client = request.client
     if client is None or not client.host:
-        return "anonymous"
+        return None
     return client.host
+
+
+def get_forwarded_client_host(
+    request: Request,
+    *,
+    trusted_proxy_count: int,
+) -> str | None:
+    """Return the last untrusted X-Forwarded-For hop when trusted."""
+
+    if trusted_proxy_count <= 0:
+        return None
+
+    forwarded_for = request.headers.get("x-forwarded-for", "").strip()
+    if not forwarded_for:
+        return None
+
+    forwarded_hosts = [
+        host.strip() for host in forwarded_for.split(",") if host.strip()
+    ]
+    if len(forwarded_hosts) < trusted_proxy_count:
+        return None
+
+    return forwarded_hosts[-trusted_proxy_count]
+
+
+def get_request_identifier(
+    request: Request,
+    *,
+    settings: RateLimitSettings | None = None,
+) -> str:
+    """Resolve the caller identifier from direct or trusted proxy data."""
+
+    resolved_settings = settings or get_rate_limit_settings()
+    direct_host = get_direct_client_host(request)
+    forwarded_host = get_forwarded_client_host(
+        request,
+        trusted_proxy_count=resolved_settings.trusted_proxy_count,
+    )
+    if forwarded_host:
+        return forwarded_host
+    if direct_host:
+        return direct_host
+    return "anonymous"
 
 
 def enforce_rate_limit(

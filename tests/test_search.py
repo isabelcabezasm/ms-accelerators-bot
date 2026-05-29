@@ -9,12 +9,18 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-
 from src.api.dependencies import get_search_service
 from src.api.main import app
 from src.api.models import SearchResult
-from src.api.rate_limit import InMemoryRateLimiter, get_rate_limiter
+from src.api.rate_limit import (
+    InMemoryRateLimiter,
+    RateLimitSettings,
+    get_rate_limit_settings,
+    get_rate_limiter,
+    get_request_identifier,
+)
 from src.api.search_service import SearchService, SearchServiceSettings
+from starlette.requests import Request
 
 
 @dataclass(frozen=True)
@@ -99,15 +105,40 @@ class StubSearchService:
         return self._results
 
 
+def build_request(
+    *,
+    client_host: str | None,
+    forwarded_for: str | None = None,
+) -> Request:
+    """Build a Starlette request with optional client and proxy headers."""
+
+    headers: list[tuple[bytes, bytes]] = []
+    if forwarded_for is not None:
+        headers.append((b"x-forwarded-for", forwarded_for.encode("utf-8")))
+
+    scope: dict[str, Any] = {
+        "type": "http",
+        "method": "GET",
+        "path": "/search",
+        "headers": headers,
+    }
+    if client_host is not None:
+        scope["client"] = (client_host, 12345)
+
+    return Request(scope)
+
+
 @pytest.fixture(autouse=True)
 def clear_overrides() -> Iterator[None]:
     """Reset FastAPI dependency overrides around each test."""
 
     app.dependency_overrides.clear()
+    get_rate_limit_settings.cache_clear()
     get_rate_limiter.cache_clear()
     get_search_service.cache_clear()
     yield
     app.dependency_overrides.clear()
+    get_rate_limit_settings.cache_clear()
     get_rate_limiter.cache_clear()
     get_search_service.cache_clear()
 
@@ -229,6 +260,35 @@ def test_search_endpoint_rate_limits_anonymous_callers(
         "Rate limit exceeded. Try again later."
     )
     assert int(second_response.headers["Retry-After"]) >= 1
+
+
+def test_request_identifier_uses_direct_client_by_default() -> None:
+    """Ignore X-Forwarded-For unless trusted proxies are configured."""
+
+    request = build_request(
+        client_host="203.0.113.10",
+        forwarded_for="198.51.100.10, 198.51.100.11",
+    )
+
+    identifier = get_request_identifier(request)
+
+    assert identifier == "203.0.113.10"
+
+
+def test_request_identifier_uses_trusted_forwarded_client() -> None:
+    """Use X-Forwarded-For only when a trusted proxy chain is configured."""
+
+    request = build_request(
+        client_host="10.0.0.10",
+        forwarded_for="198.51.100.10, 198.51.100.11",
+    )
+
+    identifier = get_request_identifier(
+        request,
+        settings=RateLimitSettings(trusted_proxy_count=2),
+    )
+
+    assert identifier == "198.51.100.10"
 
 
 @pytest.mark.parametrize(

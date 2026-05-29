@@ -24,3 +24,6 @@ class UserClaims(BaseModel):
 
 
 __all__ = ["SearchResponse", "SearchResult", "UserClaims"]
+from src.api.models.search import SearchResponse, SearchResult
+
+__all__ = ["SearchResponse", "SearchResult"]

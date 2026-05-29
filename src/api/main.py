@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 
 from src.api.config import get_settings
-from src.api.routes.search import router as search_router
+from src.api.routers.search import router as search_router
 from src.shared.models import HealthResponse
 
 
