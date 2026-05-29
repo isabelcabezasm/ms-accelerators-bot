@@ -46,9 +46,8 @@ class BlobSnapshotClient:
     ) -> None:
         """Configure the blob client with managed identity defaults."""
 
-        resolved_url = (
-            storage_account_url
-            or getenv("ACCELERATORS_STORAGE_ACCOUNT_URL")
+        resolved_url = storage_account_url or getenv(
+            "ACCELERATORS_STORAGE_ACCOUNT_URL"
         )
         if not resolved_url:
             msg = "ACCELERATORS_STORAGE_ACCOUNT_URL must be configured."

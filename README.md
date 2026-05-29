@@ -36,6 +36,9 @@ npm run build
 
 - `src/api/main.py` exposes a basic `/healthz` endpoint.
 - `src/api/config.py` loads settings with `pydantic-settings`.
-- `src/ingestion/function_app.py` provides an Azure Functions timer stub.
+- `src/ingestion/crawler.py` fetches and parses the accelerators.ms
+  catalog with retry handling and HTML fallback parsing.
+- `src/ingestion/function_app.py` runs the crawler on a daily Azure
+  Functions timer trigger.
 - `src/shared/` holds shared models, clients, prompts, and auth scaffolding.
 - `.github/workflows/ci.yml` runs backend checks and a frontend build.
