@@ -5,7 +5,7 @@ set -eo pipefail
 cd "$(dirname "$0")/../.."
 
 function usage {
-    cat<<EOF
+    cat<<EOF2
 Lint all Markdown files using markdownlint-cli2
 
 Usage: $0 [OPTIONS]
@@ -17,13 +17,11 @@ Options:
 Examples:
   $0                    # Lint all markdown files
   $0 --fix              # Lint and fix all markdown files
-EOF
+EOF2
 }
 
-# Default options
-FIX_MODE=""
+ARGS=("**/*.md" "#frontend/node_modules")
 
-# Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
@@ -31,7 +29,7 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         --fix)
-            FIX_MODE="--fix"
+            ARGS=("--fix" "${ARGS[@]}")
             shift
             ;;
         *)
@@ -42,4 +40,4 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-exec markdownlint-cli2 $FIX_MODE
+exec markdownlint-cli2 "${ARGS[@]}"
