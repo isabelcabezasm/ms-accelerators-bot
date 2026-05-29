@@ -1,0 +1,60 @@
+{
+  "agents": {
+    "monica": {
+      "persistent_name": "Monica",
+      "universe": "Friends",
+      "role": "Lead",
+      "created_at": "2026-05-29T09:59:17Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "rachel": {
+      "persistent_name": "Rachel",
+      "universe": "Friends",
+      "role": "Frontend Dev",
+      "created_at": "2026-05-29T09:59:17Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "chandler": {
+      "persistent_name": "Chandler",
+      "universe": "Friends",
+      "role": "Security Expert",
+      "created_at": "2026-05-29T09:59:17Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "ross": {
+      "persistent_name": "Ross",
+      "universe": "Friends",
+      "role": "Code Reviewer",
+      "created_at": "2026-05-29T09:59:17Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "joey": {
+      "persistent_name": "Joey",
+      "universe": "Friends",
+      "role": "Backend Dev",
+      "created_at": "2026-05-29T09:59:17Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "phoebe": {
+      "persistent_name": "Phoebe",
+      "universe": "Friends",
+      "role": "Tester",
+      "created_at": "2026-05-29T09:59:17Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "gunther": {
+      "persistent_name": "Gunther",
+      "universe": "Friends",
+      "role": "DevOps/Infra",
+      "created_at": "2026-05-29T09:59:17Z",
+      "legacy_named": false,
+      "status": "active"
+    }
+  }
+}

@@ -1,0 +1,125 @@
+#!/usr/bin/env -S uv run --script
+
+import os
+import re
+from collections.abc import Iterator
+from dataclasses import dataclass
+from enum import Enum
+from itertools import chain, groupby
+from pathlib import Path
+from typing import Final
+
+# The help pattern (in pseudo-BNF below) is used to extract the description of a
+# command:
+#
+#   HELP        ::= "#" (" ") "?" ( "[" GROUP "]" ) DESCRIPTION
+#   GROUP       ::= any character except "]"
+#   DESCRIPTION ::= any character
+#
+# Example:
+#
+#     #? [Utility] This is a super duper useful command
+
+HELP_LINE_PATTERN: Final = re.compile(r"^# ?\? *(?:\[(?P<group>[^\]]*)\] *)?(?P<help>.*)")
+GROUP_NAME: Final = "group"
+HELP_NAME: Final = "help"
+DEFAULT_GROUP: Final = "misc"
+DEFAULT_DESCRIPTION: Final = f"#? [{DEFAULT_GROUP}]"
+
+
+@dataclass(frozen=True)
+class Command:
+    path: Path
+    path_str: str
+    group: str
+    help: str
+
+
+def scan_commands(root: Path, /) -> Iterator[Command]:
+    """
+    Scan the files, yielding the file, group, and help text.
+    """
+
+    def should_display_help(file: Path) -> bool:
+        return (
+            file.is_file()
+            and os.access(file, os.X_OK)
+            and not file.suffix
+            and not file.name.startswith("_")
+            and not file == Path(__file__)  # Exclude this script itself
+        )
+
+    for file in root.rglob("*"):
+        if not should_display_help(file):
+            continue
+
+        with file.open() as lines:
+            match = next(
+                m
+                for line in chain(lines, [DEFAULT_DESCRIPTION])
+                if (m := HELP_LINE_PATTERN.match(line))
+            )
+
+        help = match.group(HELP_NAME)
+
+        if not help:
+            raise ValueError(
+                f"Command '{file}' does not have a valid help line. "
+                "Expected format: '#? [GROUP] DESCRIPTION'."
+            )
+
+        yield Command(
+            path=(p := file.relative_to(root.parent)),
+            path_str=str(p),
+            group=(match.group(GROUP_NAME) or DEFAULT_GROUP).lower(),
+            help=help,
+        )
+
+
+def main() -> None:
+    """
+    Print the description of all the commands (executable scripts) in the same
+    directory as this script, including sub-directories. Commands are grouped.
+
+    The description of a command is the first line of the file that starts with
+    the `help_pattern`. A typical help line looks like this:
+
+        "# ?" ( "[" GROUP "]" ) DESCRIPTION
+
+    The GROUP is optional and is used to group commands together. If no GROUP is
+    provided, the command is grouped under a default group.
+    """
+
+    all_commands = list(
+        sorted(scan_commands(Path(__file__).parent), key=lambda c: (c.group, c.path_str))
+    )
+
+    column_width = max(len(c.path_str) for c in all_commands) + 2
+
+    for group, commands in groupby(all_commands, key=lambda c: c.group):
+        cprint(f"# {group.capitalize()}", color=Color.BLUE)
+
+        for command in commands:
+            cprint(command.path_str.ljust(column_width), color=Color.CYAN, end="")
+            cprint(command.help)
+
+        cprint()
+
+
+class Color(Enum):
+    CYAN = "\033[96m"
+    BLUE = "\033[94m"
+    DEFAULT = "\033[0m"
+
+
+def cprint(
+    message: str = "",
+    color: Color = Color.DEFAULT,
+    *,
+    end: str | None = "\n",
+) -> None:
+    print(color.value + message if os.isatty(1) else message, end=end)
+
+
+if __name__ == "__main__":
+    main()

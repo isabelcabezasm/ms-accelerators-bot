@@ -1,0 +1,80 @@
+[project]
+name = "isa_container"
+version = "0.1.0"
+description = "Isa base container"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+  { name = "Isabel Cabezas", email = "isacabe@microsoft.com" },
+]
+
+dependencies = [
+  "python-dotenv>=1.0.0",  
+]
+
+[dependency-groups]
+dev = [
+  "pip>=25.1.1",
+  "ruff>=0.12.0",
+  "pyright>=1.1.407",  
+  "pytest>=7.4.0",
+]
+
+[tool.uv]
+default-groups = "all"
+
+[project.urls]
+Homepage = "https://github.com/isabelcabezasm/base_container"
+Repository = "https://github.com/isabelcabezasm/base_container"
+Issues = "https://github.com/isabelcabezasm/base_container"
+
+[project.scripts]
+isa_container = "src:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+include = ["src"]
+# exclude = ["src/ui/.next/", "src/ui/node_modules/"]
+# https://github.com/microsoft/pyright/blob/main/docs/configuration.md#diagnostic-settings-defaults
+deprecateTypingAliases = true
+reportCallInDefaultInitializer = "error"
+# PEP-698 is available with Python 3.12
+reportImplicitOverride = "none"
+reportImplicitStringConcatenation = "error"
+reportImportCycles = "error"
+reportMissingSuperCall = "error"
+reportPropertyTypeMismatch = "error"
+reportUninitializedInstanceVariable = "error"
+reportUnnecessaryTypeIgnoreComment = "error"
+reportUnusedCallResult = "error"
+reportUnreachable = "error"
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py312"
+show-fixes = true
+exclude = [
+  "notebooks/",
+  "src/ui/",
+  ".venv/",
+  "__pycache__/",
+]
+lint.select = [
+  "B0",     # bugbear
+  "E",      # pycodestyle
+  "I",      # import order
+  "UP",     # pyupgrade
+  "RUF100", # valid noqa annnotations
+]
+
+

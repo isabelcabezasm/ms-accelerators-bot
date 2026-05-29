@@ -1,0 +1,25 @@
+{
+  "universe_usage_history": [
+    {
+      "universe": "Friends",
+      "used_at": "2026-05-29T09:59:17Z",
+      "project": "accelerators"
+    }
+  ],
+  "assignment_cast_snapshots": {
+    "2026-05-29-init": {
+      "assignment_id": "2026-05-29-init",
+      "universe": "Friends",
+      "agents": {
+        "monica": "Lead",
+        "rachel": "Frontend Dev",
+        "chandler": "Security Expert",
+        "ross": "Code Reviewer",
+        "joey": "Backend Dev",
+        "phoebe": "Tester",
+        "gunther": "DevOps/Infra"
+      },
+      "created_at": "2026-05-29T09:59:17Z"
+    }
+  }
+}

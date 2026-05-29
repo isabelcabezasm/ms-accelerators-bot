@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+#? [Dev] Lint all Markdown files
+
+set -eo pipefail
+cd "$(dirname "$0")/../.."
+
+function usage {
+    cat<<EOF
+Lint all Markdown files using markdownlint-cli2
+
+Usage: $0 [OPTIONS]
+
+Options:
+  -h, --help     Show this help message and exit
+  --fix          Automatically fix issues where possible
+
+Examples:
+  $0                    # Lint all markdown files
+  $0 --fix              # Lint and fix all markdown files
+EOF
+}
+
+# Default options
+FIX_MODE=""
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --fix)
+            FIX_MODE="--fix"
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+exec markdownlint-cli2 $FIX_MODE

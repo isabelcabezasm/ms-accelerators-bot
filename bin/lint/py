@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+#? [Dev] Format, line and type check all Python files
+
+set -eo pipefail
+cd "$(dirname "$0")/../.."
+
+function usage {
+    cat<<EOF
+Format, line and type check all Python files
+
+Usage: $0
+EOF
+}
+
+while :; do
+    case $1 in
+        -h|--help) usage; exit ;;
+        *) break ;;
+    esac
+    shift
+done
+
+. bin/env
+
+SRC_PATH="src"
+
+uv run ruff format "$SRC_PATH"
+uv run ruff check --fix --exit-non-zero-on-fix "$SRC_PATH"
+uv run pyright "$SRC_PATH"

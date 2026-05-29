@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+#? [Dev] Run all linting
+
+set -eo pipefail
+cd "$(dirname "$0")/../.."
+
+bin/lint/md
+bin/lint/py

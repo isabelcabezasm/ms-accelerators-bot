@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#? [Dev] Run all unit tests
+
+uv run pytest
