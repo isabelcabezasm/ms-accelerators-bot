@@ -8,10 +8,8 @@ resource "azurerm_container_app_environment" "this" {
   resource_group_name = var.resource_group_name
   tags                = var.tags
 
-  identity {
-    type = "SystemAssigned"
-  }
-
+  # identity block is not supported on container_app_environment;
+  # managed identity is configured on azurerm_container_app below.
   workload_profile {
     name                  = "Consumption"
     workload_profile_type = "Consumption"

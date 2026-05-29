@@ -33,7 +33,7 @@ resource "azurerm_linux_function_app" "this" {
   resource_group_name           = var.resource_group_name
   service_plan_id               = azurerm_service_plan.this.id
   storage_account_name          = azurerm_storage_account.this.name
-  storage_account_access_key    = azurerm_storage_account.this.primary_access_key
+  storage_uses_managed_identity = true
   functions_extension_version   = var.functions_extension_version
   https_only                    = var.https_only
   public_network_access_enabled = var.public_network_access_enabled
@@ -52,4 +52,10 @@ resource "azurerm_linux_function_app" "this" {
       python_version = var.python_version
     }
   }
+}
+
+resource "azurerm_role_assignment" "storage_blob_owner" {
+  scope                = azurerm_storage_account.this.id
+  role_definition_name = "Storage Blob Data Owner"
+  principal_id         = azurerm_linux_function_app.this.identity[0].principal_id
 }
