@@ -167,6 +167,7 @@ module "front_door" {
   swa_origin               = var.front_door_swa_origin
   container_app_origin     = var.front_door_container_app_origin
   custom_domains           = var.front_door_custom_domains
+  cors_allowed_origin      = var.front_door_cors_allowed_origin
   tags                     = local.common_tags
 }
 

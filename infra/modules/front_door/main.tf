@@ -217,6 +217,56 @@ resource "azurerm_cdn_frontdoor_security_policy" "this" {
   }
 }
 
+resource "azurerm_cdn_frontdoor_rule_set" "cors" {
+  count = var.cors_allowed_origin != null ? 1 : 0
+
+  name                     = "${replace(local.resource_prefix, "-", "")}cors"
+  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
+}
+
+resource "azurerm_cdn_frontdoor_rule" "cors_headers" {
+  count = var.cors_allowed_origin != null ? 1 : 0
+
+  name                      = "AddCorsHeaders"
+  cdn_frontdoor_rule_set_id = azurerm_cdn_frontdoor_rule_set.cors[0].id
+  order                     = 1
+  behavior_on_match         = "Continue"
+
+  conditions {
+    request_header_condition {
+      header_name = "Origin"
+      operator    = "Equal"
+      match_values = [var.cors_allowed_origin]
+    }
+  }
+
+  actions {
+    response_header_action {
+      header_action = "Overwrite"
+      header_name   = "Access-Control-Allow-Origin"
+      value         = var.cors_allowed_origin
+    }
+
+    response_header_action {
+      header_action = "Overwrite"
+      header_name   = "Access-Control-Allow-Methods"
+      value         = "GET, POST, DELETE, OPTIONS"
+    }
+
+    response_header_action {
+      header_action = "Overwrite"
+      header_name   = "Access-Control-Allow-Headers"
+      value         = "Authorization, Content-Type"
+    }
+
+    response_header_action {
+      header_action = "Overwrite"
+      header_name   = "Access-Control-Max-Age"
+      value         = "86400"
+    }
+  }
+}
+
 resource "azurerm_cdn_frontdoor_route" "api" {
   name                          = "${local.resource_prefix}-api"
   cdn_frontdoor_endpoint_id     = azurerm_cdn_frontdoor_endpoint.this.id
@@ -229,6 +279,7 @@ resource "azurerm_cdn_frontdoor_route" "api" {
   patterns_to_match               = var.api_patterns_to_match
   supported_protocols             = ["Http", "Https"]
   cdn_frontdoor_custom_domain_ids = local.custom_domain_ids
+  cdn_frontdoor_rule_set_ids      = var.cors_allowed_origin != null ? [azurerm_cdn_frontdoor_rule_set.cors[0].id] : []
   link_to_default_domain          = true
 }
 

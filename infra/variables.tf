@@ -155,6 +155,13 @@ variable "front_door_custom_domains" {
   default = {}
 }
 
+variable "front_door_cors_allowed_origin" {
+  description = "Allowed CORS origin for the API routes (e.g. https://accelerators.example.com). Restricts API access to SWA origin only."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "external_id_frontend_hostname" {
   description = "Optional production hostname for the React frontend. When set, https://<hostname> is added as a redirect URI."
   type        = string
