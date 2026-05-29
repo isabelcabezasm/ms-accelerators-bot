@@ -43,7 +43,7 @@ variable "sign_in_audience" {
 }
 
 variable "spa_redirect_uris" {
-  description = "Redirect URIs for the React SPA. Leave empty to use localhost:5173 plus the optional frontend hostname."
+  description = "Redirect URIs for the React SPA. Leave empty to use http://localhost:5173/ plus the optional frontend hostname root URI."
   type        = set(string)
   default     = []
 }

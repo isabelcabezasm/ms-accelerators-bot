@@ -9,8 +9,8 @@ output "environment_name" {
 }
 
 output "environment_principal_id" {
-  description = "Principal ID of the Container Apps environment managed identity."
-  value       = azurerm_container_app_environment.this.identity[0].principal_id
+  description = "Principal ID of the Container Apps environment managed identity when available."
+  value       = try(azurerm_container_app_environment.this.identity[0].principal_id, null)
 }
 
 output "id" {

@@ -53,8 +53,8 @@ locals {
   external_id_spa_redirect_uris = toset(
     compact(
       concat(
-        var.environment != "prod" ? ["http://localhost:5173"] : [],
-        var.external_id_frontend_hostname == null ? [] : ["https://${var.external_id_frontend_hostname}"],
+        var.environment != "prod" ? ["http://localhost:5173/"] : [],
+        var.external_id_frontend_hostname == null ? [] : ["https://${var.external_id_frontend_hostname}/"],
         tolist(var.external_id_additional_spa_redirect_uris),
       )
     )

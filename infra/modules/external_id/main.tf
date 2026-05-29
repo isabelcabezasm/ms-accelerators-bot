@@ -15,8 +15,8 @@ locals {
   )
   spa_redirect_uris = length(var.spa_redirect_uris) > 0 ? var.spa_redirect_uris : toset(
     compact([
-      "http://localhost:5173",
-      var.frontend_hostname == null ? null : "https://${var.frontend_hostname}",
+      "http://localhost:5173/",
+      var.frontend_hostname == null ? null : "https://${var.frontend_hostname}/",
     ])
   )
   api_identifier_uri = coalesce(var.api_identifier_uri, "api://${var.name}-api")
@@ -79,6 +79,10 @@ resource "azuread_application" "spa" {
   display_name     = "${var.name}-spa"
   owners           = local.owner_object_ids
   sign_in_audience = var.sign_in_audience
+
+  api {
+    requested_access_token_version = 2
+  }
 
   required_resource_access {
     resource_app_id = azuread_application.api.client_id
