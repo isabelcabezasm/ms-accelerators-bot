@@ -39,6 +39,34 @@ class Settings(BaseSettings):
             "ACCELERATORS_AZURE_AD_ISSUER",
     )
     azure_ad_jwks_cache_ttl_seconds: int = Field(default=300, ge=1)
+    azure_cosmos_endpoint: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "AZURE_COSMOS_ENDPOINT",
+            "ACCELERATORS_AZURE_COSMOS_ENDPOINT",
+        ),
+    )
+    azure_cosmos_database: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "AZURE_COSMOS_DATABASE",
+            "ACCELERATORS_AZURE_COSMOS_DATABASE",
+        ),
+    )
+    azure_cosmos_container_users: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "AZURE_COSMOS_CONTAINER_USERS",
+            "ACCELERATORS_AZURE_COSMOS_CONTAINER_USERS",
+        ),
+    )
+    azure_cosmos_container_history: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "AZURE_COSMOS_CONTAINER_HISTORY",
+            "ACCELERATORS_AZURE_COSMOS_CONTAINER_HISTORY",
+        ),
+    )
 
     def require_azure_ad_client_id(self) -> str:
         """Return the configured Azure AD audience or raise an error."""
