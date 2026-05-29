@@ -13,6 +13,7 @@
     "@azure/msal-browser": "^3.27.0",
     "@azure/msal-react": "^2.0.30",
     "@fluentui/react-components": "^9.57.0",
+    "@fluentui/react-icons": "^2.0.328",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.3"
