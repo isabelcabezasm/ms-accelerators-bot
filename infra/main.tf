@@ -40,3 +40,12 @@ module "resource_group" {
   location = var.location
   tags     = local.common_tags
 }
+
+module "monitoring" {
+  source = "./modules/monitoring"
+
+  name                = local.name_prefix
+  location            = var.location
+  resource_group_name = module.resource_group.name
+  tags                = local.common_tags
+}
