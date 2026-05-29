@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 terraform {
   required_providers {
     azuread = {
@@ -7,6 +8,8 @@ terraform {
   }
 }
 
+=======
+>>>>>>> d6e8252 (feat(infra): add Entra External ID module with app registrations)
 data "azuread_client_config" "current" {}
 
 locals {
@@ -15,6 +18,10 @@ locals {
   )
   spa_redirect_uris = length(var.spa_redirect_uris) > 0 ? var.spa_redirect_uris : toset(
     compact([
+<<<<<<< HEAD
+=======
+      "http://localhost:5173",
+>>>>>>> d6e8252 (feat(infra): add Entra External ID module with app registrations)
       var.frontend_hostname == null ? null : "https://${var.frontend_hostname}",
     ])
   )
@@ -69,7 +76,11 @@ resource "azuread_application" "api" {
 }
 
 resource "azuread_service_principal" "api" {
+<<<<<<< HEAD
   app_role_assignment_required = true
+=======
+  app_role_assignment_required = false
+>>>>>>> d6e8252 (feat(infra): add Entra External ID module with app registrations)
   client_id                    = azuread_application.api.client_id
   owners                       = local.owner_object_ids
 }
@@ -94,7 +105,11 @@ resource "azuread_application" "spa" {
 }
 
 resource "azuread_service_principal" "spa" {
+<<<<<<< HEAD
   app_role_assignment_required = true
+=======
+  app_role_assignment_required = false
+>>>>>>> d6e8252 (feat(infra): add Entra External ID module with app registrations)
   client_id                    = azuread_application.spa.client_id
   owners                       = local.owner_object_ids
 }
