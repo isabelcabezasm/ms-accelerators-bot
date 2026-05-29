@@ -81,8 +81,14 @@ output "front_door_endpoint_host_name" {
   value       = try(module.front_door[0].endpoint_host_name, null)
 
 output "external_id" {
-  description = "Entra External ID app registration details and manual configuration placeholders."
-  value       = module.external_id
+  description = "Entra External ID client IDs, tenant info, and manual configuration placeholders."
+  value = {
+    tenant_id            = module.external_id.tenant_id
+    api_client_id        = module.external_id.api.client_id
+    api_identifier_uri   = module.external_id.api.identifier_uri
+    spa_client_id        = module.external_id.spa.client_id
+    manual_configuration = module.external_id.manual_configuration
+  }
 }
 
 output "resource_ids" {

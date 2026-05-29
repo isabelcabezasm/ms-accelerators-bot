@@ -26,7 +26,7 @@ variable "owner_object_ids" {
 variable "sign_in_audience" {
   description = "Supported account types for the app registrations."
   type        = string
-  default     = "AzureADMyOrg"
+  default     = "AzureADandPersonalMicrosoftAccount"
 
   validation {
     condition = contains(

@@ -160,7 +160,7 @@ variable "external_id_owner_object_ids" {
 variable "external_id_sign_in_audience" {
   description = "Supported account types for the External ID app registrations."
   type        = string
-  default     = "AzureADMyOrg"
+  default     = "AzureADandPersonalMicrosoftAccount"
 
   validation {
     condition = contains(
