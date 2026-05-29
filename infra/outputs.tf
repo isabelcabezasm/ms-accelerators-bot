@@ -70,6 +70,15 @@ output "storage_account_id" {
 output "key_vault_id" {
   description = "Resource ID of the Key Vault."
   value       = module.keyvault.id
+
+output "front_door_profile_id" {
+  description = "Resource ID of the Front Door profile when enabled."
+  value       = try(module.front_door[0].profile_id, null)
+}
+
+output "front_door_endpoint_host_name" {
+  description = "Front Door endpoint host name when enabled."
+  value       = try(module.front_door[0].endpoint_host_name, null)
 }
 
 output "resource_ids" {
@@ -109,5 +118,7 @@ output "workload_urls" {
     container_app  = module.container_app.url
     function_app   = module.functions.url
     static_web_app = module.swa.url
+
+    front_door     = try(module.front_door[0].profile_id, null)
   }
 }
