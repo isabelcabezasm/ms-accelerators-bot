@@ -25,6 +25,7 @@ class Settings(BaseSettings):
         alias="APPLICATIONINSIGHTS_CONNECTION_STRING",
     )
     azure_ad_tenant_id: str | None = Field(
+        default=None,
         validation_alias=AliasChoices(
             "AZURE_AD_TENANT_ID",
             "ACCELERATORS_AZURE_AD_TENANT_ID",
@@ -74,6 +75,20 @@ class Settings(BaseSettings):
             "ACCELERATORS_AZURE_COSMOS_CONTAINER_QUOTAS",
         ),
     )
+        default=None,
+        validation_alias=AliasChoices(
+            "AZURE_AD_CLIENT_ID",
+            "ACCELERATORS_AZURE_AD_CLIENT_ID",
+        ),
+    )
+    azure_ad_issuer: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "AZURE_AD_ISSUER",
+            "ACCELERATORS_AZURE_AD_ISSUER",
+        ),
+    )
+    azure_ad_jwks_cache_ttl_seconds: int = Field(default=300, ge=1)
 
     def require_azure_ad_client_id(self) -> str:
         """Return the configured Azure AD audience or raise an error."""

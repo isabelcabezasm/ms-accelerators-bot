@@ -7,6 +7,10 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from pydantic import BaseModel, ConfigDict, Field
+
+from src.api.models.search import SearchResponse, SearchResult
+
 
 class UserClaims(BaseModel):
     """Represent the authenticated user claims exposed to handlers."""
@@ -19,6 +23,7 @@ class UserClaims(BaseModel):
         description="Primary email-style identifier for the user.",
     )
     name: str | None = Field(
+        default=None,
         description="Display name included in the access token.",
     )
 

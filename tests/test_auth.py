@@ -48,6 +48,10 @@ class MockHttpxClient:
 
         """Store the JWKS payload returned for each mocked request."""
 
+    def __init__(self, payload: dict[str, Any]) -> None:
+        """Store the JWKS payload returned for each mocked request."""
+
+        self._payload = payload
 
     def __enter__(self) -> MockHttpxClient:
         """Return the client instance when entering the context."""
@@ -76,6 +80,8 @@ def reset_auth_state(
     get_settings.cache_clear()
     clear_jwks_cache()
     yield
+    get_settings.cache_clear()
+    clear_jwks_cache()
 
 
 @pytest.fixture
@@ -95,6 +101,7 @@ def app() -> FastAPI:
     return test_app
 
 
+@pytest.fixture
 def rsa_private_key() -> rsa.RSAPrivateKey:
     """Generate an RSA private key for signing test access tokens."""
 
@@ -153,6 +160,7 @@ def _build_token(
 
 
 def _mock_jwks_request(
+    monkeypatch: pytest.MonkeyPatch,
     jwks_payload: dict[str, Any],
 ) -> None:
     """Mock the JWKS HTTP request issued by the auth dependency."""
@@ -169,6 +177,9 @@ def _mock_jwks_request(
 def test_get_current_user_returns_claims(
     app: FastAPI,
     rsa_private_key: rsa.RSAPrivateKey,
+    monkeypatch: pytest.MonkeyPatch,
+    rsa_private_key: rsa.RSAPrivateKey,
+) -> None:
     """Return user claims when the bearer token is valid."""
 
     _mock_jwks_request(monkeypatch, _build_jwks(rsa_private_key))
@@ -179,6 +190,9 @@ def test_get_current_user_returns_claims(
 
     assert response.status_code == 200
     assert response.json() == {
+        "sub": "user-123",
+        "email": "joey@example.com",
+        "name": "Joey Backend",
     }
 
 
@@ -187,6 +201,17 @@ def test_get_current_user_rejects_expired_token(
 
     token = _build_token(rsa_private_key, expires_delta=timedelta(minutes=-5))
 
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+    rsa_private_key: rsa.RSAPrivateKey,
+) -> None:
+    """Reject expired JWTs with a 401 response."""
+
+    _mock_jwks_request(monkeypatch, _build_jwks(rsa_private_key))
+    token = _build_token(rsa_private_key, expires_delta=timedelta(minutes=-5))
+
+    client = TestClient(app)
+    response = client.get("/me", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Access token has expired."}
@@ -197,6 +222,10 @@ def test_get_current_user_rejects_missing_header(app: FastAPI) -> None:
 
     response = client.get("/me")
 
+    client = TestClient(app)
+    response = client.get("/me")
+
+    assert response.status_code == 401
     assert response.json() == {"detail": "Missing Authorization header."}
 
 
@@ -204,6 +233,15 @@ def test_get_current_user_rejects_malformed_token(
     """Reject malformed bearer tokens before claims are returned."""
 
 
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+    rsa_private_key: rsa.RSAPrivateKey,
+) -> None:
+    """Reject malformed bearer tokens before claims are returned."""
+
+    _mock_jwks_request(monkeypatch, _build_jwks(rsa_private_key))
+
+    client = TestClient(app)
     response = client.get(
         "/me",
         headers={"Authorization": "Bearer not-a-valid-jwt"},
@@ -253,3 +291,5 @@ def test_get_current_user_rejects_non_rs256_tokens(
         headers={"Authorization": f"Bearer {token}"},
     )
 
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid access token."}
