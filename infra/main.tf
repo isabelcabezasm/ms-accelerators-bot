@@ -6,6 +6,10 @@ terraform {
       source  = "Azure/azapi"
       version = "~> 2.4"
     }
+    azuread = {
+      source  = "hashicorp/azuread"
+      version = "~> 3.5"
+    }
     azurerm = {
       source  = "hashicorp/azurerm"
       version = "~> 4.31"
@@ -22,6 +26,8 @@ provider "azurerm" {
 provider "azapi" {}
 
 data "azurerm_client_config" "current" {}
+
+provider "azuread" {}
 
 locals {
   name_prefix                           = lower(join("-", [var.project_name, var.environment]))
@@ -43,6 +49,15 @@ locals {
       project     = var.project_name
     },
     var.tags,
+  )
+  external_id_spa_redirect_uris = toset(
+    compact(
+      concat(
+        var.environment != "prod" ? ["http://localhost:5173"] : [],
+        var.external_id_frontend_hostname == null ? [] : ["https://${var.external_id_frontend_hostname}"],
+        tolist(var.external_id_additional_spa_redirect_uris),
+      )
+    )
   )
 }
 
@@ -138,4 +153,17 @@ module "front_door" {
   container_app_origin     = var.front_door_container_app_origin
   custom_domains           = var.front_door_custom_domains
   tags                     = local.common_tags
+
+module "external_id" {
+  source = "./modules/external_id"
+
+  name                      = local.name_prefix
+  api_identifier_uri        = var.external_id_api_identifier_uri
+  frontend_hostname         = var.external_id_frontend_hostname
+  owner_object_ids          = var.external_id_owner_object_ids
+  sign_in_audience          = var.external_id_sign_in_audience
+  spa_redirect_uris         = local.external_id_spa_redirect_uris
+  social_identity_providers = var.external_id_social_identity_providers
+  tags                      = local.common_tags
+  user_flows                = var.external_id_user_flows
 }

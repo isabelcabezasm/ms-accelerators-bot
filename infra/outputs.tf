@@ -79,6 +79,16 @@ output "front_door_profile_id" {
 output "front_door_endpoint_host_name" {
   description = "Front Door endpoint host name when enabled."
   value       = try(module.front_door[0].endpoint_host_name, null)
+
+output "external_id" {
+  description = "Entra External ID client IDs, tenant info, and manual configuration placeholders."
+  value = {
+    tenant_id            = module.external_id.tenant_id
+    api_client_id        = module.external_id.api.client_id
+    api_identifier_uri   = module.external_id.api.identifier_uri
+    spa_client_id        = module.external_id.spa.client_id
+    manual_configuration = module.external_id.manual_configuration
+  }
 }
 
 output "resource_ids" {
@@ -120,5 +130,11 @@ output "workload_urls" {
     static_web_app = module.swa.url
 
     front_door     = try(module.front_door[0].profile_id, null)
+
+    resource_group                    = module.resource_group.id
+    external_id_api_application       = module.external_id.api.id
+    external_id_spa_application       = module.external_id.spa.id
+    external_id_api_service_principal = module.external_id.api.service_principal_id
+    external_id_spa_service_principal = module.external_id.spa.service_principal_id
   }
 }
