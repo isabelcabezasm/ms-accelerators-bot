@@ -34,15 +34,20 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     environment: infra
+    concurrency:
+      group: terraform-plan-${{ github.ref }}
+      cancel-in-progress: true
     defaults:
       run:
         working-directory: infra
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "1.9.8"
 
       - name: Validate Azure and backend configuration
         run: |
@@ -68,7 +73,7 @@ jobs:
           fi
 
       - name: Azure login
-        uses: azure/login@v2
+        uses: azure/login@eec3c95657c1536435858eda1f3ff5437fee8474 # v2.3.0
         with:
           client-id: ${{ secrets.ARM_CLIENT_ID }}
           tenant-id: ${{ secrets.ARM_TENANT_ID }}
@@ -83,6 +88,9 @@ jobs:
             -backend-config="key=${TF_BACKEND_KEY:-dev/terraform.tfstate}" \
             -backend-config="use_azuread_auth=true" \
             -backend-config="use_oidc=true"
+
+      - name: Terraform format check
+        run: terraform fmt -check -recursive
 
       - name: Terraform plan
         id: plan
@@ -121,7 +129,7 @@ jobs:
 
       - name: Post Terraform plan to pull request
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
           PLAN_STATUS: ${{ steps.plan.outputs.status || 'failed' }}
           PLAN_PATH: infra/plan.txt
@@ -207,10 +215,12 @@ jobs:
         working-directory: infra
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "1.9.8"
 
       - name: Validate Azure and backend configuration
         run: |
@@ -236,7 +246,7 @@ jobs:
           fi
 
       - name: Azure login
-        uses: azure/login@v2
+        uses: azure/login@eec3c95657c1536435858eda1f3ff5437fee8474 # v2.3.0
         with:
           client-id: ${{ secrets.ARM_CLIENT_ID }}
           tenant-id: ${{ secrets.ARM_TENANT_ID }}
