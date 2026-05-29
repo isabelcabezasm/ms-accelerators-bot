@@ -56,6 +56,11 @@ jobs:
     defaults:
       run:
         working-directory: infra
+    env:
+      ARM_USE_OIDC: true
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -80,6 +85,7 @@ jobs:
           container_name       = "${{ secrets.TF_BACKEND_CONTAINER }}"
           key                  = "${{ secrets.TF_BACKEND_KEY }}"
           use_azuread_auth     = true
+          use_oidc             = true
           EOF
 
       - name: Initialize remote backend
