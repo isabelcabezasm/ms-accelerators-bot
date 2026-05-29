@@ -1,3 +1,32 @@
+output "container_app_principal_id" {
+  description = "Principal ID of the Container App managed identity."
+  value       = module.container_app.principal_id
+}
+
+output "container_app_url" {
+  description = "URL of the Container App ingress endpoint."
+  value       = module.container_app.url
+}
+
+output "function_app_principal_id" {
+  description = "Principal ID of the Function App managed identity."
+  value       = module.functions.principal_id
+}
+
+output "function_app_url" {
+  description = "URL of the Function App."
+  value       = module.functions.url
+}
+
+output "managed_identity_principal_ids" {
+  description = "Managed identity principal IDs for the compute resources."
+  value = {
+    container_app  = module.container_app.principal_id
+    function_app   = module.functions.principal_id
+    static_web_app = module.swa.principal_id
+  }
+}
+
 output "name_prefix" {
   description = "Naming prefix shared by Terraform-managed resources."
   value       = local.name_prefix
@@ -56,5 +85,29 @@ output "resource_ids" {
     resource_group    = module.resource_group.id
     storage_account   = module.storage.account_id
     storage_container = module.storage.container_id
+
+    container_app  = module.container_app.id
+    function_app   = module.functions.id
+    resource_group = module.resource_group.id
+    static_web_app = module.swa.id
+  }
+}
+
+output "static_web_app_principal_id" {
+  description = "Principal ID of the Static Web App managed identity."
+  value       = module.swa.principal_id
+}
+
+output "static_web_app_url" {
+  description = "URL of the Static Web App."
+  value       = module.swa.url
+}
+
+output "workload_urls" {
+  description = "Public URLs for the compute workloads."
+  value = {
+    container_app  = module.container_app.url
+    function_app   = module.functions.url
+    static_web_app = module.swa.url
   }
 }
