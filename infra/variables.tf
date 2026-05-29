@@ -245,3 +245,9 @@ variable "external_id_user_flows" {
     }
   }
 }
+
+variable "managed_identity_principal_ids" {
+  description = "Managed identity principal IDs that should receive service-level RBAC on AI Search and Azure OpenAI."
+  type        = list(string)
+  default     = []
+}
