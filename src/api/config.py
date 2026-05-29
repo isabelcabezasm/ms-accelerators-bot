@@ -25,25 +25,18 @@ class Settings(BaseSettings):
         alias="APPLICATIONINSIGHTS_CONNECTION_STRING",
     )
     azure_ad_tenant_id: str | None = Field(
-        default=None,
         validation_alias=AliasChoices(
             "AZURE_AD_TENANT_ID",
             "ACCELERATORS_AZURE_AD_TENANT_ID",
         ),
     )
     azure_ad_client_id: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices(
             "AZURE_AD_CLIENT_ID",
             "ACCELERATORS_AZURE_AD_CLIENT_ID",
-        ),
     )
     azure_ad_issuer: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices(
             "AZURE_AD_ISSUER",
             "ACCELERATORS_AZURE_AD_ISSUER",
-        ),
     )
     azure_ad_jwks_cache_ttl_seconds: int = Field(default=300, ge=1)
 
@@ -76,10 +69,8 @@ class Settings(BaseSettings):
 
         issuer = self.resolve_azure_ad_issuer()
         return f"{issuer}/discovery/v2.0/keys"
-        validation_alias=AliasChoices(
             "APPLICATIONINSIGHTS_CONNECTION_STRING",
             "ACCELERATORS_APPLICATIONINSIGHTS_CONNECTION_STRING",
-        ),
     )
 
 

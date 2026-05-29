@@ -18,12 +18,10 @@ class UserClaims(BaseModel):
         description="Primary email-style identifier for the user.",
     )
     name: str | None = Field(
-        default=None,
         description="Display name included in the access token.",
     )
 
 
 __all__ = ["SearchResponse", "SearchResult", "UserClaims"]
-from src.api.models.search import SearchResponse, SearchResult
 
 __all__ = ["SearchResponse", "SearchResult"]

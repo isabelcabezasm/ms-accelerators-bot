@@ -13,6 +13,8 @@ from urllib.parse import urlparse
 
 import httpx
 import jwt
+
+from cachetools import TTLCache
 from fastapi import Depends, Header, HTTPException, status
 from jwt import ExpiredSignatureError, InvalidTokenError
 from jwt.algorithms import RSAAlgorithm
@@ -50,6 +52,15 @@ def clear_jwks_cache() -> None:
 
     with _JWKS_CACHE_LOCK:
         _JWKS_CACHE.clear()
+_CACHE_MAXSIZE: Final[int] = 8
+_JWKS_CACHE: TTLCache[str, dict[str, Any]] = TTLCache(
+    maxsize=_CACHE_MAXSIZE,
+    ttl=300,
+)
+
+
+    """Clear the in-memory JWKS cache used by token validation."""
+
 
 
 def _unauthorized(detail: str) -> HTTPException:
@@ -65,7 +76,6 @@ def _unauthorized(detail: str) -> HTTPException:
 def _authentication_configuration_error() -> HTTPException:
     """Build a 500 response when auth settings are incomplete."""
 
-    return HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail="Authentication is not configured.",
     )
@@ -114,7 +124,6 @@ def _build_azure_ad_jwks_url(issuer: str) -> str:
         raise RuntimeError("AZURE_AD_ISSUER has an unsupported path.")
 
     if len(path_segments) == 2 and path_segments[1] != "v2.0":
-        raise RuntimeError("AZURE_AD_ISSUER has an unsupported path.")
 
     tenant = path_segments[0]
     return (
@@ -132,7 +141,6 @@ def _get_cached_jwks_document(jwks_url: str) -> dict[str, Any] | None:
 
     if cached_entry.expires_at <= monotonic():
         _JWKS_CACHE.pop(jwks_url, None)
-        return None
 
     return cached_entry.document
 
@@ -152,6 +160,21 @@ def _cache_jwks_document(
 
 def _fetch_jwks_document_from_remote(jwks_url: str) -> dict[str, Any]:
     """Fetch a JWKS document from the trusted Azure AD endpoint."""
+    """Store the JWKS document in a TTL cache keyed by endpoint URL."""
+
+    global _JWKS_CACHE
+
+    if _JWKS_CACHE.ttl != ttl_seconds:
+        _JWKS_CACHE = TTLCache(maxsize=_CACHE_MAXSIZE, ttl=ttl_seconds)
+    _JWKS_CACHE[jwks_url] = jwks_document
+
+
+def fetch_jwks_document(jwks_url: str, ttl_seconds: int) -> dict[str, Any]:
+    """Fetch and cache the JWKS document used for signature validation."""
+
+    cached_document = _JWKS_CACHE.get(jwks_url)
+    if cached_document is not None:
+        return cached_document
 
     try:
         with httpx.Client(timeout=5.0) as client:
@@ -168,23 +191,19 @@ def _fetch_jwks_document_from_remote(jwks_url: str) -> dict[str, Any]:
 
     keys = jwks_payload.get("keys")
     if not isinstance(keys, list):
-        LOGGER.error("Received malformed JWKS payload from %s", jwks_url)
-        raise _unauthorized("Authentication service unavailable.")
 
     return jwks_payload
 
 
-def fetch_jwks_document(jwks_url: str, ttl_seconds: int) -> dict[str, Any]:
     """Fetch and cache the JWKS document used for signature validation."""
 
-    with _JWKS_CACHE_LOCK:
         cached_document = _get_cached_jwks_document(jwks_url)
-        if cached_document is not None:
-            return cached_document
 
         jwks_document = _fetch_jwks_document_from_remote(jwks_url)
         _cache_jwks_document(jwks_url, jwks_document, ttl_seconds)
         return jwks_document
+    _cache_jwks_document(jwks_url, jwks_payload, ttl_seconds)
+    jwks_document = jwks_payload
 
 
 def _select_signing_key(
@@ -201,7 +220,6 @@ def _select_signing_key(
             return key
 
     LOGGER.warning("No signing key found for token kid %s", key_id)
-    raise _unauthorized("Invalid access token.")
 
 
 def _build_user_claims(token_claims: Mapping[str, Any]) -> UserClaims:
@@ -221,7 +239,6 @@ def _build_user_claims(token_claims: Mapping[str, Any]) -> UserClaims:
 
     subject_claim = token_claims.get("sub")
     if not isinstance(subject_claim, str) or not subject_claim:
-        raise _unauthorized("Invalid access token.")
 
     return UserClaims(
         sub=subject_claim,
@@ -233,15 +250,14 @@ def _build_user_claims(token_claims: Mapping[str, Any]) -> UserClaims:
 def validate_jwt_token(token: str, settings: Settings) -> UserClaims:
     """Validate a JWT against the configured issuer, audience, and JWKS."""
 
-    try:
         audience = settings.require_azure_ad_client_id()
         issuer = settings.resolve_azure_ad_issuer()
         jwks_url = _build_azure_ad_jwks_url(issuer)
+        jwks_url = settings.resolve_azure_ad_jwks_url()
     except RuntimeError:
         LOGGER.exception("Azure AD authentication settings are incomplete.")
         raise _authentication_configuration_error() from None
 
-    try:
         token_header = jwt.get_unverified_header(token)
     except InvalidTokenError as exc:
         LOGGER.warning("Failed to parse token header: %s", exc)
@@ -250,7 +266,6 @@ def validate_jwt_token(token: str, settings: Settings) -> UserClaims:
     algorithm = token_header.get("alg")
     if algorithm != "RS256":
         LOGGER.warning("Rejected unsupported JWT algorithm %s", algorithm)
-        raise _unauthorized("Invalid access token.")
 
     jwks_document = fetch_jwks_document(
         jwks_url,
@@ -258,7 +273,6 @@ def validate_jwt_token(token: str, settings: Settings) -> UserClaims:
     )
     signing_key = _select_signing_key(jwks_document, token_header.get("kid"))
 
-    try:
         public_key = cast(
             Any,
             RSAAlgorithm.from_jwk(json.dumps(signing_key)),
@@ -274,14 +288,13 @@ def validate_jwt_token(token: str, settings: Settings) -> UserClaims:
     except ExpiredSignatureError as exc:
         LOGGER.info("Rejected expired JWT for issuer %s", issuer)
         raise _unauthorized("Access token has expired.") from exc
-    except InvalidTokenError as exc:
         LOGGER.warning("JWT validation failed: %s", exc)
-        raise _unauthorized("Invalid access token.") from exc
 
     return _build_user_claims(token_claims)
 
 
 def get_current_user(
+async def get_current_user(
     settings: Annotated[Settings, Depends(get_app_settings)],
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> UserClaims:

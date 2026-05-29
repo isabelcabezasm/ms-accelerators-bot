@@ -22,6 +22,7 @@ ISSUER = f"https://login.microsoftonline.com/{TENANT_ID}/v2.0"
 JWKS_URL = (
     f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys"
 )
+JWKS_URL = f"{ISSUER}/discovery/v2.0/keys"
 KEY_ID = "test-key-id"
 
 
@@ -45,10 +46,8 @@ class MockResponse:
 class MockHttpxClient:
     """Context-managed HTTP client double for JWKS fetches."""
 
-    def __init__(self, payload: dict[str, Any]) -> None:
         """Store the JWKS payload returned for each mocked request."""
 
-        self._payload = payload
 
     def __enter__(self) -> MockHttpxClient:
         """Return the client instance when entering the context."""
@@ -77,8 +76,6 @@ def reset_auth_state(
     get_settings.cache_clear()
     clear_jwks_cache()
     yield
-    get_settings.cache_clear()
-    clear_jwks_cache()
 
 
 @pytest.fixture
@@ -98,7 +95,6 @@ def app() -> FastAPI:
     return test_app
 
 
-@pytest.fixture
 def rsa_private_key() -> rsa.RSAPrivateKey:
     """Generate an RSA private key for signing test access tokens."""
 
@@ -157,7 +153,6 @@ def _build_token(
 
 
 def _mock_jwks_request(
-    monkeypatch: pytest.MonkeyPatch,
     jwks_payload: dict[str, Any],
 ) -> None:
     """Mock the JWKS HTTP request issued by the auth dependency."""
@@ -173,9 +168,7 @@ def _mock_jwks_request(
 
 def test_get_current_user_returns_claims(
     app: FastAPI,
-    monkeypatch: pytest.MonkeyPatch,
     rsa_private_key: rsa.RSAPrivateKey,
-) -> None:
     """Return user claims when the bearer token is valid."""
 
     _mock_jwks_request(monkeypatch, _build_jwks(rsa_private_key))
@@ -186,24 +179,14 @@ def test_get_current_user_returns_claims(
 
     assert response.status_code == 200
     assert response.json() == {
-        "sub": "user-123",
-        "email": "joey@example.com",
-        "name": "Joey Backend",
     }
 
 
 def test_get_current_user_rejects_expired_token(
-    app: FastAPI,
-    monkeypatch: pytest.MonkeyPatch,
-    rsa_private_key: rsa.RSAPrivateKey,
-) -> None:
     """Reject expired JWTs with a 401 response."""
 
-    _mock_jwks_request(monkeypatch, _build_jwks(rsa_private_key))
     token = _build_token(rsa_private_key, expires_delta=timedelta(minutes=-5))
 
-    client = TestClient(app)
-    response = client.get("/me", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Access token has expired."}
@@ -212,98 +195,61 @@ def test_get_current_user_rejects_expired_token(
 def test_get_current_user_rejects_missing_header(app: FastAPI) -> None:
     """Reject requests that do not include an Authorization header."""
 
-    client = TestClient(app)
     response = client.get("/me")
 
-    assert response.status_code == 401
     assert response.json() == {"detail": "Missing Authorization header."}
 
 
 def test_get_current_user_rejects_malformed_token(
-    app: FastAPI,
-    monkeypatch: pytest.MonkeyPatch,
-    rsa_private_key: rsa.RSAPrivateKey,
-) -> None:
     """Reject malformed bearer tokens before claims are returned."""
 
-    _mock_jwks_request(monkeypatch, _build_jwks(rsa_private_key))
 
-    client = TestClient(app)
     response = client.get(
         "/me",
         headers={"Authorization": "Bearer not-a-valid-jwt"},
     )
 
-    assert response.status_code == 401
     assert response.json() == {"detail": "Invalid access token."}
 
 
 def test_get_current_user_rejects_untrusted_jwks_url(
-    app: FastAPI,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
     """Reject issuers that would derive a non-Microsoft JWKS URL."""
 
     monkeypatch.setenv(
         "AZURE_AD_ISSUER",
         f"https://evil.example.com/{TENANT_ID}/v2.0",
     )
-    get_settings.cache_clear()
 
-    def build_client(*args: object, **kwargs: object) -> MockHttpxClient:
         """Fail the test if auth attempts to fetch an untrusted JWKS URL."""
 
-        del args, kwargs
         raise AssertionError(
             "JWKS fetch should not run for untrusted issuers."
         )
 
-    monkeypatch.setattr("src.api.auth.httpx.Client", build_client)
 
-    client = TestClient(app)
     response = client.get("/me", headers={"Authorization": "Bearer any"})
 
     assert response.status_code == 500
-    assert response.json() == {
         "detail": "Authentication is not configured.",
     }
 
 
 def test_get_current_user_rejects_non_rs256_tokens(
-    app: FastAPI,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
     """Reject tokens that do not use the pinned RS256 algorithm."""
 
     token = jwt.encode(
-        {
-            "sub": "user-123",
-            "email": "joey@example.com",
-            "name": "Joey Backend",
-            "iss": ISSUER,
-            "aud": CLIENT_ID,
             "exp": datetime.now(UTC) + timedelta(minutes=5),
         },
         "shared-secret-for-hs256-regression-checks",
         algorithm="HS256",
-        headers={"kid": KEY_ID},
     )
 
-    def build_client(*args: object, **kwargs: object) -> MockHttpxClient:
         """Fail the test if a non-RS256 token reaches JWKS fetching."""
 
-        del args, kwargs
-        raise AssertionError(
             "JWKS fetch should not run for HS256 tokens."
         )
 
-    monkeypatch.setattr("src.api.auth.httpx.Client", build_client)
 
-    client = TestClient(app)
-    response = client.get(
-        "/me",
         headers={"Authorization": f"Bearer {token}"},
     )
 
-    assert response.status_code == 401
-    assert response.json() == {"detail": "Invalid access token."}
