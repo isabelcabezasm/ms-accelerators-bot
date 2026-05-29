@@ -59,6 +59,10 @@ class UserProfile(BaseModel):
         default=None,
         description="Timestamp when cleanup was queued.",
     )
+    deletion_scheduled_at: datetime | None = Field(
+        default=None,
+        description="Timestamp when background deletion was scheduled.",
+    )
 
 
 class ChatHistoryItem(BaseModel):
@@ -123,6 +127,10 @@ class DeletionResponse(BaseModel):
     )
     cleanup_pending: bool = Field(
         description="Whether background cleanup is still pending.",
+    )
+    deletion_scheduled_at: datetime | None = Field(
+        default=None,
+        description="Timestamp when background deletion was scheduled.",
     )
 
 

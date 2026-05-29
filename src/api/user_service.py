@@ -20,6 +20,8 @@ from src.api.models import ChatHistoryItem, ExportData, UserClaims, UserProfile
 
 LOGGER = logging.getLogger(__name__)
 COSMOS_HOST_SUFFIX = ".documents.azure.com"
+DELETION_MARKER_PREFIX = "deletion-marker:"
+DELETION_MARKER_TYPE = "deletion_marker"
 
 
 class ContainerProtocol(Protocol):
@@ -37,6 +39,7 @@ class ContainerProtocol(Protocol):
         query: str,
         parameters: list[dict[str, Any]],
         enable_cross_partition_query: bool,
+        partition_key: str | None = None,
     ) -> list[dict[str, Any]]:
         """Execute a Cosmos SQL query and return matching items."""
 
@@ -47,6 +50,10 @@ class UserServiceError(RuntimeError):
 
 class UserServiceConfigurationError(UserServiceError):
     """Raise when the user service configuration is incomplete."""
+
+
+class UserDeletionPendingError(UserServiceError):
+    """Raise when the authenticated account is awaiting deletion."""
 
 
 def validate_cosmos_endpoint(value: str | None) -> str:
@@ -105,6 +112,12 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+def _marker_id(user_id: str) -> str:
+    """Build the deletion marker identifier for a user."""
+
+    return f"{DELETION_MARKER_PREFIX}{user_id}"
+
+
 class UserService:
     """Read and write user profile data stored in Azure Cosmos DB."""
 
@@ -116,6 +129,7 @@ class UserService:
         cosmos_client: CosmosClient | Any | None = None,
         user_container: ContainerProtocol | None = None,
         history_container: ContainerProtocol | None = None,
+        quota_container: ContainerProtocol | None = None,
     ) -> None:
         """Create the service using managed identity by default."""
 
@@ -123,9 +137,14 @@ class UserService:
         self._credential = credential or DefaultAzureCredential()
         self._cosmos_client = cosmos_client
 
-        if user_container is not None and history_container is not None:
+        if (
+            user_container is not None
+            and history_container is not None
+            and quota_container is not None
+        ):
             self._user_container = user_container
             self._history_container = history_container
+            self._quota_container = quota_container
             return
 
         endpoint = validate_cosmos_endpoint(
@@ -143,6 +162,10 @@ class UserService:
             self._settings.azure_cosmos_container_history,
             env_var="AZURE_COSMOS_CONTAINER_HISTORY",
         )
+        quota_container_name = _require_setting(
+            self._settings.azure_cosmos_container_quotas,
+            env_var="AZURE_COSMOS_CONTAINER_QUOTAS",
+        )
 
         self._cosmos_client = cosmos_client or CosmosClient(
             endpoint,
@@ -159,23 +182,38 @@ class UserService:
             history_container
             or database_client.get_container_client(history_container_name)
         )
+        self._quota_container = (
+            quota_container
+            or database_client.get_container_client(quota_container_name)
+        )
 
     def get_or_create_profile(self, user: UserClaims) -> UserProfile:
         """Return the user profile, creating it on first authenticated use."""
 
-        try:
-            document = self._user_container.read_item(
-                item=user.sub,
-                partition_key=user.sub,
-            )
-        except CosmosResourceNotFoundError:
+        deletion_marker = self._get_deletion_marker(user.sub)
+        document = self._read_profile_document(user.sub)
+        if document is None:
+            if deletion_marker is not None:
+                raise UserDeletionPendingError(
+                    "Account deletion is pending."
+                )
             LOGGER.info("Creating new profile for user %s", user.sub)
             return self._create_profile(user)
-        except CosmosHttpResponseError as exc:
-            LOGGER.exception("Failed to read profile for user %s", user.sub)
-            raise UserServiceError("Failed to load the user profile.") from exc
 
-        return self._sync_profile_document(document=document, user=user)
+        validated_document = self._validate_profile_document(
+            document=document,
+            user_id=user.sub,
+        )
+        if (
+            deletion_marker is not None
+            or self._profile_deletion_pending(validated_document)
+        ):
+            return UserProfile.model_validate(validated_document)
+
+        return self._sync_profile_document(
+            document=validated_document,
+            user=user,
+        )
 
     def get_history(
         self,
@@ -188,14 +226,24 @@ class UserService:
 
         query = (
             "SELECT * FROM c WHERE c.user_id = @user_id "
+            "AND (NOT IS_DEFINED(c.document_type) "
+            "OR c.document_type != @deletion_marker_type) "
             "ORDER BY c.created_at DESC OFFSET @offset LIMIT @limit"
         )
         parameters = [
             {"name": "@user_id", "value": user_id},
+            {
+                "name": "@deletion_marker_type",
+                "value": DELETION_MARKER_TYPE,
+            },
             {"name": "@offset", "value": offset},
             {"name": "@limit", "value": limit},
         ]
-        return self._query_history_items(query=query, parameters=parameters)
+        return self._query_history_items(
+            query=query,
+            parameters=parameters,
+            user_id=user_id,
+        )
 
     def export_user_data(self, user: UserClaims) -> ExportData:
         """Aggregate the complete user profile and chat history export."""
@@ -203,9 +251,18 @@ class UserService:
         history = self._query_history_items(
             query=(
                 "SELECT * FROM c WHERE c.user_id = @user_id "
+                "AND (NOT IS_DEFINED(c.document_type) "
+                "OR c.document_type != @deletion_marker_type) "
                 "ORDER BY c.created_at DESC"
             ),
-            parameters=[{"name": "@user_id", "value": user.sub}],
+            parameters=[
+                {"name": "@user_id", "value": user.sub},
+                {
+                    "name": "@deletion_marker_type",
+                    "value": DELETION_MARKER_TYPE,
+                },
+            ],
+            user_id=user.sub,
         )
         return ExportData(
             profile=self.get_or_create_profile(user),
@@ -216,30 +273,61 @@ class UserService:
     def soft_delete_user(self, user: UserClaims) -> UserProfile:
         """Soft-delete the user and mark the account for cleanup."""
 
-        profile = self.get_or_create_profile(user)
+        deletion_marker = self._get_deletion_marker(user.sub)
+        profile_document = self._read_profile_document(user.sub)
+        if deletion_marker is not None and profile_document is None:
+            return self._profile_from_deletion_marker(
+                user=user,
+                marker=deletion_marker,
+            )
+
+        if profile_document is None:
+            profile = self._create_profile(user)
+            profile_document = profile.model_dump(mode="json")
+        else:
+            profile_document = self._validate_profile_document(
+                document=profile_document,
+                user_id=user.sub,
+            )
+
         deleted_at = _utc_now()
-        document = profile.model_dump(mode="json")
-        document.update(
+        if self._profile_deletion_pending(profile_document):
+            deleted_at = self._coerce_datetime(
+                profile_document.get("deletion_scheduled_at")
+                or profile_document.get("deleted_at"),
+                fallback=deleted_at,
+            )
+
+        profile_document.update(
             {
                 "deleted_at": deleted_at.isoformat(),
                 "cleanup_pending": True,
                 "cleanup_requested_at": deleted_at.isoformat(),
+                "deletion_scheduled_at": deleted_at.isoformat(),
                 "updated_at": deleted_at.isoformat(),
             }
         )
+        profile = UserProfile.model_validate(profile_document)
 
         try:
-            self._user_container.upsert_item(body=document)
+            self._user_container.upsert_item(body=profile_document)
+            self._upsert_deletion_markers(
+                profile=profile,
+                deleted_at=deleted_at,
+            )
         except CosmosHttpResponseError as exc:
             LOGGER.exception("Failed to soft-delete user %s", user.sub)
             raise UserServiceError(
                 "Failed to delete the user profile."
             ) from exc
 
-        return UserProfile.model_validate(document)
+        return profile
 
     def _create_profile(self, user: UserClaims) -> UserProfile:
         """Create a new user profile document in Cosmos DB."""
+
+        if self._get_deletion_marker(user.sub) is not None:
+            raise UserDeletionPendingError("Account deletion is pending.")
 
         timestamp = _utc_now()
         profile = UserProfile(
@@ -268,6 +356,9 @@ class UserService:
         user: UserClaims,
     ) -> UserProfile:
         """Keep mutable profile fields aligned with the latest token claims."""
+
+        if self._profile_deletion_pending(document):
+            return UserProfile.model_validate(document)
 
         updated_document = dict(document)
         changed = False
@@ -304,6 +395,7 @@ class UserService:
         *,
         query: str,
         parameters: list[dict[str, Any]],
+        user_id: str,
     ) -> list[ChatHistoryItem]:
         """Run a history query and convert raw rows into typed models."""
 
@@ -313,10 +405,186 @@ class UserService:
                     query=query,
                     parameters=parameters,
                     enable_cross_partition_query=True,
+                    partition_key=user_id,
                 )
             )
         except CosmosHttpResponseError as exc:
             LOGGER.exception("Failed to query user history.")
             raise UserServiceError("Failed to load user history.") from exc
 
-        return [ChatHistoryItem.model_validate(item) for item in items]
+        history_items: list[ChatHistoryItem] = []
+        for item in items:
+            if item.get("user_id") != user_id:
+                raise UserServiceError(
+                    "Unauthorized history item returned for the user."
+                )
+            history_items.append(ChatHistoryItem.model_validate(item))
+
+        return history_items
+
+    def _read_profile_document(self, user_id: str) -> dict[str, Any] | None:
+        """Read the persisted profile document for a specific user."""
+
+        try:
+            return self._user_container.read_item(
+                item=user_id,
+                partition_key=user_id,
+            )
+        except CosmosResourceNotFoundError:
+            return None
+        except CosmosHttpResponseError as exc:
+            LOGGER.exception("Failed to read profile for user %s", user_id)
+            raise UserServiceError("Failed to load the user profile.") from exc
+
+    def _get_deletion_marker(self, user_id: str) -> dict[str, Any] | None:
+        """Return the persisted deletion marker when cleanup is pending."""
+
+        try:
+            marker = self._user_container.read_item(
+                item=_marker_id(user_id),
+                partition_key=user_id,
+            )
+        except CosmosResourceNotFoundError:
+            return None
+        except CosmosHttpResponseError as exc:
+            LOGGER.exception(
+                "Failed to read deletion marker for user %s",
+                user_id,
+            )
+            raise UserServiceError(
+                "Failed to load the user deletion state."
+            ) from exc
+
+        if marker.get("user_id") != user_id:
+            raise UserServiceError(
+                "Unauthorized deletion marker returned for the user."
+            )
+
+        return marker
+
+    def _validate_profile_document(
+        self,
+        *,
+        document: dict[str, Any],
+        user_id: str,
+    ) -> dict[str, Any]:
+        """Validate that the loaded profile belongs to the caller."""
+
+        validated_document = dict(document)
+        document_id = validated_document.get("id")
+        document_user_id = validated_document.get("user_id")
+        if document_id != user_id:
+            raise UserServiceError(
+                "Unauthorized profile document returned for the user."
+            )
+        if document_user_id not in (None, user_id):
+            raise UserServiceError(
+                "Unauthorized profile document returned for the user."
+            )
+        validated_document.setdefault("user_id", user_id)
+        return validated_document
+
+    def _profile_deletion_pending(self, document: dict[str, Any]) -> bool:
+        """Return whether a profile document is already pending deletion."""
+
+        return bool(
+            document.get("cleanup_pending")
+            or document.get("deleted_at")
+            or document.get("deletion_scheduled_at")
+        )
+
+    def _upsert_deletion_markers(
+        self,
+        *,
+        profile: UserProfile,
+        deleted_at: datetime,
+    ) -> None:
+        """Persist cleanup markers in every user-owned Cosmos container."""
+
+        container_map = (
+            ("profile", self._user_container),
+            ("history", self._history_container),
+            ("quotas", self._quota_container),
+        )
+        for target_container, container in container_map:
+            container.upsert_item(
+                body=self._build_deletion_marker(
+                    profile=profile,
+                    deleted_at=deleted_at,
+                    target_container=target_container,
+                )
+            )
+
+    def _build_deletion_marker(
+        self,
+        *,
+        profile: UserProfile,
+        deleted_at: datetime,
+        target_container: str,
+    ) -> dict[str, Any]:
+        """Create the deletion marker stored for background cleanup."""
+
+        return {
+            "id": _marker_id(profile.user_id),
+            "user_id": profile.user_id,
+            "document_type": DELETION_MARKER_TYPE,
+            "target_container": target_container,
+            "email": profile.email,
+            "name": profile.name,
+            "created_at": profile.created_at.isoformat(),
+            "updated_at": deleted_at.isoformat(),
+            "deleted_at": deleted_at.isoformat(),
+            "cleanup_pending": True,
+            "cleanup_requested_at": deleted_at.isoformat(),
+            "deletion_scheduled_at": deleted_at.isoformat(),
+        }
+
+    def _profile_from_deletion_marker(
+        self,
+        *,
+        user: UserClaims,
+        marker: dict[str, Any],
+    ) -> UserProfile:
+        """Rebuild a pending-deletion profile from its marker document."""
+
+        deleted_at = self._coerce_datetime(
+            marker.get("deleted_at"),
+            fallback=_utc_now(),
+        )
+        return UserProfile.model_validate(
+            {
+                "id": user.sub,
+                "user_id": user.sub,
+                "email": marker.get("email", user.email),
+                "name": marker.get("name", user.name),
+                "created_at": marker.get("created_at", deleted_at.isoformat()),
+                "updated_at": marker.get("updated_at", deleted_at.isoformat()),
+                "deleted_at": deleted_at.isoformat(),
+                "cleanup_pending": True,
+                "cleanup_requested_at": marker.get(
+                    "cleanup_requested_at",
+                    deleted_at.isoformat(),
+                ),
+                "deletion_scheduled_at": marker.get(
+                    "deletion_scheduled_at",
+                    deleted_at.isoformat(),
+                ),
+            }
+        )
+
+    def _coerce_datetime(
+        self,
+        value: Any,
+        *,
+        fallback: datetime,
+    ) -> datetime:
+        """Convert stored timestamps into timezone-aware datetime values."""
+
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                return fallback
+        return fallback

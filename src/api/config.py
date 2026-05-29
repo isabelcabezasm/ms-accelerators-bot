@@ -67,6 +67,13 @@ class Settings(BaseSettings):
             "ACCELERATORS_AZURE_COSMOS_CONTAINER_HISTORY",
         ),
     )
+    azure_cosmos_container_quotas: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "AZURE_COSMOS_CONTAINER_QUOTAS",
+            "ACCELERATORS_AZURE_COSMOS_CONTAINER_QUOTAS",
+        ),
+    )
 
     def require_azure_ad_client_id(self) -> str:
         """Return the configured Azure AD audience or raise an error."""

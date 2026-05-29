@@ -16,7 +16,11 @@ from src.api.models import (
     UserClaims,
     UserProfile,
 )
-from src.api.user_service import UserService, UserServiceError
+from src.api.user_service import (
+    UserDeletionPendingError,
+    UserService,
+    UserServiceError,
+)
 
 LOGGER = logging.getLogger(__name__)
 router = APIRouter(prefix="/me", tags=["me"])
@@ -29,6 +33,12 @@ def _raise_user_service_error(
     exc: UserServiceError,
 ) -> None:
     """Translate service errors into consistent API error responses."""
+
+    if isinstance(exc, UserDeletionPendingError):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Account deletion is pending.",
+        ) from exc
 
     LOGGER.exception(
         "Failed to %s for user %s",
@@ -125,4 +135,5 @@ async def delete_me(
         user_id=profile.user_id,
         deleted_at=profile.deleted_at,
         cleanup_pending=profile.cleanup_pending,
+        deletion_scheduled_at=profile.deletion_scheduled_at,
     )
