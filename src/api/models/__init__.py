@@ -10,6 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.api.models.chat import ChatRequest, ChatResponse, Citation
+from pydantic import BaseModel, ConfigDict, Field
+
+from src.api.models.chat import ChatRequest, ChatResponse, Citation
 
 
 class UserClaims(BaseModel):

@@ -1,3 +1,5 @@
+"""Configuration helpers for the chat RAG pipeline."""
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -14,6 +16,7 @@ from src.ingestion.search_client import (
 
 class RagSettings(BaseSettings):
     """Configuration values for the retrieval augmented generation flow."""
+    """Stores Azure settings needed by the RAG components."""
 
     model_config = SettingsConfigDict(
         env_prefix="ACCELERATORS_",
@@ -121,10 +124,54 @@ class RagSettings(BaseSettings):
         if not index_name:
             raise ValueError("Azure AI Search index name is not configured.")
         return index_name
+    answer_max_tokens: int = Field(default=600, ge=128, le=2048)
+
+    def require_openai_endpoint(self) -> str:
+        """Returns a validated Azure OpenAI endpoint."""
+
+        return validate_azure_endpoint(
+            self.azure_openai_endpoint,
+            expected_host_suffix=OPENAI_HOST_SUFFIX,
+            variable_name="AZURE_OPENAI_ENDPOINT",
+        )
+
+    def require_chat_deployment(self) -> str:
+        """Returns the configured chat deployment name."""
+
+        if not self.azure_openai_chat_deployment:
+            msg = "AZURE_OPENAI_CHAT_DEPLOYMENT must be configured."
+            raise ValueError(msg)
+        return self.azure_openai_chat_deployment
+
+    def require_embedding_deployment(self) -> str:
+        """Returns the configured embedding deployment name."""
+
+        if not self.azure_openai_embedding_deployment:
+            msg = "AZURE_OPENAI_EMBEDDING_DEPLOYMENT must be configured."
+            raise ValueError(msg)
+        return self.azure_openai_embedding_deployment
+
+    def require_search_endpoint(self) -> str:
+        """Returns a validated Azure AI Search endpoint."""
+
+        return validate_azure_endpoint(
+            self.azure_search_endpoint,
+            expected_host_suffix=SEARCH_HOST_SUFFIX,
+            variable_name="AZURE_SEARCH_ENDPOINT",
+        )
+
+    def require_search_index_name(self) -> str:
+        """Returns the configured AI Search index name."""
+
+        if not self.azure_search_index_name:
+            msg = "AZURE_SEARCH_INDEX_NAME must be configured."
+            raise ValueError(msg)
+        return self.azure_search_index_name
 
 
 @lru_cache(maxsize=1)
 def get_rag_settings() -> RagSettings:
     """Return the cached RAG settings instance."""
+    """Returns a cached settings instance for the RAG pipeline."""
 
     return RagSettings()

@@ -34,6 +34,7 @@ class SearchResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(description="Display title for the matched item.")
+    description: str = Field(
         description="Short description chosen for the search result."
     )
     score: float = Field(
@@ -47,5 +48,14 @@ class SearchResponse(BaseModel):
 
     query: str = Field(description="Normalized user query string.")
     top: int = Field(description="Maximum number of results requested.")
+class SearchResponse(BaseModel):
+    """Represent the response payload returned by the search endpoint."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(description="Normalized user query string.")
+    top: int = Field(description="Maximum number of results requested.")
+    results: list[SearchResult] = Field(
+        default_factory=list,
         description="Ranked search results.",
     )

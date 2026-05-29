@@ -1,3 +1,5 @@
+"""Answer generation support for the chat RAG pipeline."""
+
 from __future__ import annotations
 
 import json
@@ -25,12 +27,19 @@ ANSWER_SYSTEM_PROMPT = (
     "citations. Cite every factual claim with citation ids like [1]. "
     "If the sources are insufficient, say so clearly. Return valid JSON "
     'with keys "answer" and "citations".'
+LOGGER = logging.getLogger(__name__)
+ANSWER_SYSTEM_PROMPT = (
+    "You answer questions about Microsoft accelerators using only the "
+    "retrieved sources. Cite every factual claim with citation ids like "
+    "[1]. If the sources are insufficient, say so clearly. Return valid "
+    'JSON with keys "answer" and "citations".'
 )
 
 
 @dataclass(slots=True)
 class GeneratedAnswer:
     """A grounded answer and the citations referenced by the model."""
+    """Represents a model-generated answer and the citations it used."""
 
     answer: str
     citations: list[Citation]
@@ -38,6 +47,7 @@ class GeneratedAnswer:
 
 class AnswerGenerator:
     """Generate grounded chat answers from retrieved accelerator context."""
+    """Generates a grounded answer from grouped retrieval results."""
 
     def __init__(
         self,
@@ -46,6 +56,7 @@ class AnswerGenerator:
         openai_client: Any | None = None,
     ) -> None:
         """Create a generator backed by Azure OpenAI chat completions."""
+        """Initializes the answer generator with Azure OpenAI access."""
 
         self._settings = settings or get_rag_settings()
         self._openai_client = openai_client or build_azure_openai_client(
@@ -68,6 +79,18 @@ class AnswerGenerator:
             )
 
         user_prompt = self._build_user_prompt(
+        """Builds a cited answer from the retrieved accelerator chunks."""
+
+        if not accelerators:
+            return GeneratedAnswer(
+                answer=(
+                    "I could not find relevant accelerator content for that "
+                    "question."
+                ),
+                citations=[],
+            )
+
+        prompt = self._build_user_prompt(
             message=message,
             rewritten_query=rewritten_query,
             accelerators=accelerators,
@@ -79,6 +102,7 @@ class AnswerGenerator:
                 messages=[
                     {"role": "system", "content": ANSWER_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
+                    {"role": "user", "content": prompt},
                 ],
                 temperature=0.2,
                 max_tokens=self._settings.answer_max_tokens,
@@ -102,6 +126,18 @@ class AnswerGenerator:
             accelerators,
         )
         return GeneratedAnswer(answer=answer.strip(), citations=citations)
+            LOGGER.exception("Failed to generate a cited chat answer.")
+            raise RAGError("Unable to generate a chat response.") from exc
+
+        raw_content = extract_message_content(response)
+        payload = self._parse_payload(raw_content)
+        answer = str(payload.get("answer") or "").strip()
+        if not answer:
+            raise RAGError("Chat response did not contain an answer.")
+
+        citation_ids = payload.get("citations", [])
+        citations = self._resolve_citations(citation_ids, accelerators)
+        return GeneratedAnswer(answer=answer, citations=citations)
 
     def _build_user_prompt(
         self,
@@ -145,6 +181,32 @@ class AnswerGenerator:
 
     def _parse_payload(self, raw_content: str) -> dict[str, Any]:
         """Parse the JSON response payload returned by the chat model."""
+        """Formats grouped retrieval results into model context."""
+
+        sections: list[str] = [
+            f"Original question: {message}",
+            f"Search query: {rewritten_query}",
+            "Retrieved sources:",
+        ]
+        for accelerator in accelerators:
+            sections.append(
+                f"Accelerator: {accelerator.accelerator_name}\n"
+                f"URL: {accelerator.url}\n"
+                f"Summary: {accelerator.summary}"
+            )
+            for chunk in accelerator.chunks:
+                sections.append(
+                    f"[{chunk.citation_id}] {chunk.excerpt.strip()}"
+                )
+
+        sections.append(
+            "Return JSON like "
+            '{"answer": "...", "citations": [1, 2]}. '
+        )
+        return "\n\n".join(sections)
+
+    def _parse_payload(self, raw_content: str) -> dict[str, Any]:
+        """Parses the JSON payload returned by the chat completion."""
 
         try:
             payload = json.loads(raw_content)
@@ -155,6 +217,11 @@ class AnswerGenerator:
 
         if not isinstance(payload, dict):
             raise RAGError("Chat completion returned an unexpected payload.")
+            LOGGER.exception("Chat completion did not return valid JSON.")
+            raise RAGError("Chat response was not valid JSON.") from exc
+
+        if not isinstance(payload, dict):
+            raise RAGError("Chat response payload must be a JSON object.")
         return payload
 
     def _resolve_citations(
@@ -177,6 +244,21 @@ class AnswerGenerator:
 
     def _normalize_citation_ids(self, citation_ids: Any) -> list[int]:
         """Normalize citation ids into a stable list of unique integers."""
+        """Maps model-selected citation ids to API citation models."""
+
+        selected_ids = self._normalize_citation_ids(citation_ids)
+        citation_index = {
+            chunk.citation_id: chunk
+            for chunk in self._iter_chunks(accelerators)
+        }
+        return [
+            self._build_citation(citation_index[citation_id])
+            for citation_id in selected_ids
+            if citation_id in citation_index
+        ]
+
+    def _normalize_citation_ids(self, citation_ids: Any) -> list[int]:
+        """Normalizes citation ids from JSON into unique integers."""
 
         if not isinstance(citation_ids, list):
             return []
@@ -196,12 +278,27 @@ class AnswerGenerator:
         accelerators: list[RetrievedAccelerator],
     ) -> Iterable[RetrievedChunk]:
         """Yield retrieved chunks in prompt order."""
+        normalized_ids: list[int] = []
+        for value in citation_ids:
+            try:
+                citation_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if citation_id not in normalized_ids:
+                normalized_ids.append(citation_id)
+        return normalized_ids
+
+    def _iter_chunks(
+        self, accelerators: list[RetrievedAccelerator]
+    ) -> Iterable[RetrievedChunk]:
+        """Yields every retrieved chunk in grouped order."""
 
         for accelerator in accelerators:
             yield from accelerator.chunks
 
     def _build_citation(self, chunk: RetrievedChunk) -> Citation:
         """Convert a retrieved chunk into the public citation schema."""
+        """Builds an API citation model from a retrieved chunk."""
 
         return Citation(
             id=chunk.citation_id,

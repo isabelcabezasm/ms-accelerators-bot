@@ -14,6 +14,16 @@ from src.api.config import Settings, get_settings
 from src.api.user_service import UserService, UserServiceConfigurationError
 
 LOGGER = logging.getLogger(__name__)
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import TYPE_CHECKING
+
+from src.api.config import Settings, get_settings
+from src.api.quotas import QuotaService
+
+if TYPE_CHECKING:
+    from src.api.search_service import SearchService
 
 
 def get_app_settings() -> Settings:
@@ -39,3 +49,15 @@ def get_user_service() -> UserService:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="User storage is not configured.",
         ) from exc
+    """Create and cache the Azure-backed search service dependency."""
+
+    from src.api.search_service import SearchService
+
+    return SearchService()
+
+
+@lru_cache
+def get_quota_service() -> QuotaService:
+    """Create and cache the Cosmos-backed quota service dependency."""
+
+    return QuotaService()
