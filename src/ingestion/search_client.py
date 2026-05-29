@@ -6,6 +6,7 @@ import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 from azure.core.credentials import TokenCredential
 from azure.core.exceptions import (
@@ -16,10 +17,46 @@ from azure.core.exceptions import (
 from azure.identity import DefaultAzureCredential
 from azure.search.documents import SearchClient
 from azure.search.documents.indexes import SearchIndexClient
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.shared.models import AcceleratorChunk, AcceleratorDocument
+
+SEARCH_HOST_SUFFIX = ".search.windows.net"
+OPENAI_HOST_SUFFIX = ".openai.azure.com"
+
+
+def validate_azure_endpoint(
+    value: str | None,
+    *,
+    env_var: str,
+    host_suffix: str,
+) -> str:
+    """Validate required Azure service endpoints before client creation."""
+
+    if value is None:
+        message = f"{env_var} must be configured."
+        raise ValueError(message)
+
+    endpoint = value.strip()
+    if not endpoint or endpoint.lower() == "none":
+        message = f"{env_var} must be configured."
+        raise ValueError(message)
+
+    parsed_endpoint = urlparse(endpoint)
+    hostname = parsed_endpoint.hostname
+    if parsed_endpoint.scheme != "https" or not hostname:
+        message = f"{env_var} must be an https:// Azure endpoint."
+        raise ValueError(message)
+
+    normalized_host = hostname.lower()
+    if not normalized_host.endswith(host_suffix):
+        message = (
+            f"{env_var} must match the Azure host pattern *{host_suffix}."
+        )
+        raise ValueError(message)
+
+    return endpoint
 
 
 @dataclass(frozen=True)
@@ -47,6 +84,17 @@ class SearchSettings(BaseSettings):
     upsert_batch_size: int = Field(default=100, ge=1, le=1000)
     retry_attempts: int = Field(default=3, ge=1, le=10)
 
+    @field_validator("search_endpoint")
+    @classmethod
+    def validate_search_endpoint(cls, value: str | None) -> str:
+        """Require a valid Azure AI Search endpoint URL."""
+
+        return validate_azure_endpoint(
+            value,
+            env_var="ACCELERATORS_SEARCH_ENDPOINT",
+            host_suffix=SEARCH_HOST_SUFFIX,
+        )
+
 
 class AcceleratorSearchClient:
     """Wrap Azure AI Search index management and document upserts."""
@@ -69,16 +117,18 @@ class AcceleratorSearchClient:
             self._search_client = search_client
             return
 
-        if self._settings.search_endpoint is None:
-            message = "ACCELERATORS_SEARCH_ENDPOINT must be configured."
-            raise ValueError(message)
+        endpoint = validate_azure_endpoint(
+            self._settings.search_endpoint,
+            env_var="ACCELERATORS_SEARCH_ENDPOINT",
+            host_suffix=SEARCH_HOST_SUFFIX,
+        )
 
         self._index_client = index_client or SearchIndexClient(
-            endpoint=self._settings.search_endpoint,
+            endpoint=endpoint,
             credential=self._credential,
         )
         self._search_client = search_client or SearchClient(
-            endpoint=self._settings.search_endpoint,
+            endpoint=endpoint,
             index_name=self._settings.search_index_name,
             credential=self._credential,
         )
