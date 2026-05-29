@@ -23,9 +23,7 @@ class FakeBlobClient:
 
         self.container = container
         self.blob = blob
-        self.url = (
-            f"https://example.blob.core.windows.net/{container}/{blob}"
-        )
+        self.url = f"https://example.blob.core.windows.net/{container}/{blob}"
         self.uploads: list[dict[str, object]] = []
 
     def upload_blob(
