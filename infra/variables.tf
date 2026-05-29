@@ -93,7 +93,7 @@ variable "front_door_waf_mode" {
 }
 
 variable "front_door_swa_origin" {
-  description = "Origin configuration for the Static Web Apps frontend."
+  description = "Origin configuration for the Static Web Apps frontend. Required when front_door_enabled = true."
   type = object({
     host_name                        = string
     origin_host_header               = optional(string)
@@ -104,13 +104,12 @@ variable "front_door_swa_origin" {
     health_probe_request_type        = optional(string, "HEAD")
     health_probe_interval_in_seconds = optional(number, 120)
   })
-  default = {
-    host_name = "example.azurestaticapps.net"
-  }
+  nullable = true
+  default  = null
 }
 
 variable "front_door_container_app_origin" {
-  description = "Origin configuration for the Container Apps API."
+  description = "Origin configuration for the Container Apps API. Required when front_door_enabled = true."
   type = object({
     host_name                        = string
     origin_host_header               = optional(string)
@@ -121,9 +120,8 @@ variable "front_door_container_app_origin" {
     health_probe_request_type        = optional(string, "HEAD")
     health_probe_interval_in_seconds = optional(number, 120)
   })
-  default = {
-    host_name = "example.swedencentral.azurecontainerapps.io"
-  }
+  nullable = true
+  default  = null
 }
 
 variable "front_door_custom_domains" {

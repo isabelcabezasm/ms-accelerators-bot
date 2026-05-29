@@ -131,7 +131,10 @@ resource "azurerm_cdn_frontdoor_firewall_policy" "this" {
       match_variable     = "RequestUri"
       operator           = "BeginsWith"
       negation_condition = false
-      match_values       = ["/chat"]
+      # Use "/chat/" prefix (not "/chat") to avoid matching unrelated paths
+      # like /chatbot or /chatroom. Exact "/chat" path is also covered by
+      # the /chat/* API route pattern.
+      match_values       = ["/chat/"]
     }
   }
 
@@ -161,6 +164,9 @@ resource "azurerm_cdn_frontdoor_firewall_policy" "this" {
     }
   }
 
+  # NOTE: OWASP and Bot Manager managed rules are only supported on the
+  # Premium_AzureFrontDoor SKU. These blocks are silently omitted on
+  # Standard SKU. Upgrade to Premium to enable managed rule protection.
   dynamic "managed_rule" {
     for_each = var.sku_name == "Premium_AzureFrontDoor" ? [1] : []
 
