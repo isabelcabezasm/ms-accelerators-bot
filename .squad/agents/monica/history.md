@@ -9,6 +9,17 @@
 
 <!-- Append new learnings below. Each entry is something lasting about the project. -->
 
+### 2026-05-29 — CI/CD Deployment Pipeline Issue Created & Decided
+
+Created issue #34 (Phase 0: GitHub Actions pipeline for Terraform deployment) at Isabel's request. This workflow will:
+- Deploy Azure infrastructure via Terraform on commits to `main` that touch `infra/**`
+- Use GitHub Actions with `paths` filter for conditional triggering
+- Implement separate plan (on PR) and apply (on merge) jobs
+- Use Azure OIDC workload identity federation (federated credentials) instead of stored secrets for enhanced security
+- Coordinate with Gunther's team (#1, Terraform stack scaffold) for state management and setup
+
+**Phase 0 Batch 1 Completion (2026-05-29T11:54:49Z):** CI/CD pipeline architecture decision finalized and documented in decisions.md. Status: Proposed. Primary implementation assigned to Gunther. Awaiting Chandler security review of OIDC configuration.
+
 ### 2026-05-29 — PRD Decomposition into GitHub Issues
 
 Created 33 issues (#1–#33) in `isabelcabezasm/ms-accelerators-bot` from `docs/proposal.md`:

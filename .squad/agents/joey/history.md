@@ -22,3 +22,4 @@ Monica (Lead) created 33 issues (#1–#33) across 6 phases from `docs/proposal.m
 - Added the React + Vite frontend skeleton in `frontend/` and a CI workflow
   in `.github/workflows/ci.yml` to validate backend checks and frontend
   builds.
+**Phase 0 Batch 1 Completion (2026-05-29T11:54:49Z):** Issue #8 (repo structure scaffolding) completed. PR #35 opened, tests and lint pass. Foundation ready for backend development work.
