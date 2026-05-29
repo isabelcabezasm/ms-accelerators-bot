@@ -1,5 +1,3 @@
-"""Configuration helpers for the chat RAG pipeline."""
-
 from __future__ import annotations
 
 from functools import lru_cache
@@ -15,7 +13,7 @@ from src.ingestion.search_client import (
 
 
 class RagSettings(BaseSettings):
-    """Stores Azure settings needed by the RAG components."""
+    """Configuration values for the retrieval augmented generation flow."""
 
     model_config = SettingsConfigDict(
         env_prefix="ACCELERATORS_",
@@ -76,53 +74,57 @@ class RagSettings(BaseSettings):
     )
     top_k: int = Field(default=8, ge=1, le=20)
     rewrite_max_tokens: int = Field(default=128, ge=32, le=512)
+    context_token_budget: int = Field(default=2500, ge=256, le=12000)
     answer_max_tokens: int = Field(default=600, ge=128, le=2048)
+    trusted_citation_domains: tuple[str, ...] = Field(
+        default=("accelerators.ms", "github.com")
+    )
 
     def require_openai_endpoint(self) -> str:
-        """Returns a validated Azure OpenAI endpoint."""
+        """Return a validated Azure OpenAI endpoint."""
 
-        return validate_azure_endpoint(
-            self.azure_openai_endpoint,
-            expected_host_suffix=OPENAI_HOST_SUFFIX,
-            variable_name="AZURE_OPENAI_ENDPOINT",
-        )
+        endpoint = self.azure_openai_endpoint
+        if not endpoint:
+            raise ValueError("Azure OpenAI endpoint is not configured.")
+        return validate_azure_endpoint(endpoint, OPENAI_HOST_SUFFIX)
 
     def require_chat_deployment(self) -> str:
-        """Returns the configured chat deployment name."""
+        """Return the configured chat deployment name."""
 
-        if not self.azure_openai_chat_deployment:
-            msg = "AZURE_OPENAI_CHAT_DEPLOYMENT must be configured."
-            raise ValueError(msg)
-        return self.azure_openai_chat_deployment
+        deployment = self.azure_openai_chat_deployment
+        if not deployment:
+            raise ValueError("Azure OpenAI chat deployment is not configured.")
+        return deployment
 
     def require_embedding_deployment(self) -> str:
-        """Returns the configured embedding deployment name."""
+        """Return the configured embedding deployment name."""
 
-        if not self.azure_openai_embedding_deployment:
-            msg = "AZURE_OPENAI_EMBEDDING_DEPLOYMENT must be configured."
-            raise ValueError(msg)
-        return self.azure_openai_embedding_deployment
+        deployment = self.azure_openai_embedding_deployment
+        if not deployment:
+            raise ValueError(
+                "Azure OpenAI embedding deployment is not configured."
+            )
+        return deployment
 
     def require_search_endpoint(self) -> str:
-        """Returns a validated Azure AI Search endpoint."""
+        """Return a validated Azure AI Search endpoint."""
 
-        return validate_azure_endpoint(
-            self.azure_search_endpoint,
-            expected_host_suffix=SEARCH_HOST_SUFFIX,
-            variable_name="AZURE_SEARCH_ENDPOINT",
-        )
+        endpoint = self.azure_search_endpoint
+        if not endpoint:
+            raise ValueError("Azure AI Search endpoint is not configured.")
+        return validate_azure_endpoint(endpoint, SEARCH_HOST_SUFFIX)
 
     def require_search_index_name(self) -> str:
-        """Returns the configured AI Search index name."""
+        """Return the configured Azure AI Search index name."""
 
-        if not self.azure_search_index_name:
-            msg = "AZURE_SEARCH_INDEX_NAME must be configured."
-            raise ValueError(msg)
-        return self.azure_search_index_name
+        index_name = self.azure_search_index_name
+        if not index_name:
+            raise ValueError("Azure AI Search index name is not configured.")
+        return index_name
 
 
 @lru_cache(maxsize=1)
 def get_rag_settings() -> RagSettings:
-    """Returns a cached settings instance for the RAG pipeline."""
+    """Return the cached RAG settings instance."""
 
     return RagSettings()
