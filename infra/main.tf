@@ -32,6 +32,10 @@ locals {
   key_vault_name                        = substr("${replace(local.name_prefix, "-", "")}kv", 0, 24)
   key_vault_managed_identity_object_ids = length(var.key_vault_managed_identity_object_ids) > 0 ? var.key_vault_managed_identity_object_ids : var.managed_identity_principal_ids
   key_vault_tenant_id                   = coalesce(var.tenant_id, data.azurerm_client_config.current.tenant_id)
+
+  name_prefix         = lower(join("-", [var.project_name, var.environment]))
+  compute_name_prefix = substr(replace(local.name_prefix, "-", ""), 0, 12)
+  unique_suffix       = substr(md5(join("-", [var.project_name, var.environment, var.location])), 0, 6)
   common_tags = merge(
     {
       environment = var.environment
@@ -91,4 +95,31 @@ module "keyvault" {
   tenant_id                   = local.key_vault_tenant_id
   managed_identity_object_ids = local.key_vault_managed_identity_object_ids
   tags                        = local.common_tags
+
+module "container_app" {
+  source = "./modules/container_app"
+
+  name                = "${local.compute_name_prefix}-${var.environment}-${local.unique_suffix}-api"
+  environment_name    = "${local.compute_name_prefix}-${var.environment}-${local.unique_suffix}-env"
+  location            = var.location
+  resource_group_name = module.resource_group.name
+  tags                = local.common_tags
+}
+
+module "functions" {
+  source = "./modules/functions"
+
+  name                = "${local.compute_name_prefix}-${var.environment}-${local.unique_suffix}-func"
+  location            = var.location
+  resource_group_name = module.resource_group.name
+  tags                = local.common_tags
+}
+
+module "swa" {
+  source = "./modules/swa"
+
+  name                = "${local.compute_name_prefix}-${var.environment}-${local.unique_suffix}-web"
+  location            = var.location
+  resource_group_name = module.resource_group.name
+  tags                = local.common_tags
 }
