@@ -76,6 +76,11 @@ class Settings(BaseSettings):
 
         issuer = self.resolve_azure_ad_issuer()
         return f"{issuer}/discovery/v2.0/keys"
+        validation_alias=AliasChoices(
+            "APPLICATIONINSIGHTS_CONNECTION_STRING",
+            "ACCELERATORS_APPLICATIONINSIGHTS_CONNECTION_STRING",
+        ),
+    )
 
 
 @lru_cache
