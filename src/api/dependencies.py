@@ -4,6 +4,16 @@ from functools import lru_cache
 
 from src.api.config import Settings, get_settings
 from src.api.search_service import SearchService
+from __future__ import annotations
+
+import logging
+
+from fastapi import HTTPException, status
+
+from src.api.config import Settings, get_settings
+from src.api.user_service import UserService, UserServiceConfigurationError
+
+LOGGER = logging.getLogger(__name__)
 
 
 def get_app_settings() -> Settings:
@@ -18,3 +28,14 @@ def get_search_service() -> SearchService:
     """Create and cache the Azure-backed search service dependency."""
 
     return SearchService()
+def get_user_service() -> UserService:
+    """Build the user service or surface configuration failures clearly."""
+
+    try:
+        return UserService(settings=get_app_settings())
+    except UserServiceConfigurationError as exc:
+        LOGGER.exception("User service configuration is incomplete.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="User storage is not configured.",
+        ) from exc
