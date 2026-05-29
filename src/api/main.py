@@ -7,6 +7,7 @@ from src.api.routers.search import router as search_router
 from src.api.middleware import TracingMiddleware
 from src.api.telemetry import configure_telemetry
 from src.api.routes.me import router as me_router
+from src.api.routes import chat_router
 from src.shared.models import HealthResponse
 
 
@@ -33,6 +34,7 @@ def create_app() -> FastAPI:
         return HealthResponse(status="ok")
 
     app.include_router(me_router)
+    app.include_router(chat_router)
     return app
 
 
