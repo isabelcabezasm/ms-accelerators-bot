@@ -74,7 +74,7 @@ variable "chat_model_name" {
 variable "chat_model_version" {
   description = "Version for the chat model deployment."
   type        = string
-  default     = "latest"
+  default     = "2024-07-18"
 }
 
 variable "chat_deployment_capacity" {
@@ -103,7 +103,7 @@ variable "embedding_model_name" {
 variable "embedding_model_version" {
   description = "Version for the embeddings model deployment."
   type        = string
-  default     = "latest"
+  default     = "1"
 }
 
 variable "embedding_deployment_capacity" {

@@ -27,18 +27,18 @@ resource "azurerm_search_service" "this" {
   }
 }
 
-resource "azurerm_role_assignment" "index_data_reader" {
+resource "azurerm_role_assignment" "index_data_contributor" {
   for_each = toset(var.managed_identity_principal_ids)
 
   scope                = azurerm_search_service.this.id
-  role_definition_name = "Search Index Data Reader"
+  role_definition_name = "Search Index Data Contributor"
   principal_id         = each.value
   principal_type       = "ServicePrincipal"
 }
 
 resource "azapi_data_plane_resource" "placeholder_index" {
   type      = "Microsoft.Search/searchServices/indexes@2024-07-01"
-  parent_id = "${azurerm_search_service.this.name}.search.windows.net"
+  parent_id = "https://${azurerm_search_service.this.name}.search.windows.net"
   name      = var.index_name
 
   body = {
@@ -197,6 +197,6 @@ resource "azapi_data_plane_resource" "placeholder_index" {
 
   depends_on = [
     azurerm_search_service.this,
-    azurerm_role_assignment.index_data_reader,
+    azurerm_role_assignment.index_data_contributor,
   ]
 }
