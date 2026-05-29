@@ -11,10 +11,14 @@ from typing import Any
 import tiktoken
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from openai import AzureOpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from src.ingestion.search_client import AcceleratorSearchClient
+from src.ingestion.search_client import (
+    OPENAI_HOST_SUFFIX,
+    AcceleratorSearchClient,
+    validate_azure_endpoint,
+)
 from src.shared.models import AcceleratorChunk, AcceleratorDocument
 
 EMBEDDING_DEPLOYMENT_NAME = "text-embedding-3-large"
@@ -46,6 +50,17 @@ class PipelineSettings(BaseSettings):
     openai_embedding_deployment: str = Field(
         default=EMBEDDING_DEPLOYMENT_NAME
     )
+
+    @field_validator("openai_endpoint")
+    @classmethod
+    def validate_openai_endpoint(cls, value: str | None) -> str:
+        """Require a valid Azure OpenAI endpoint URL."""
+
+        return validate_azure_endpoint(
+            value,
+            env_var="ACCELERATORS_OPENAI_ENDPOINT",
+            host_suffix=OPENAI_HOST_SUFFIX,
+        )
 
 
 class IngestionPipeline:
@@ -159,9 +174,11 @@ class IngestionPipeline:
     def _create_openai_client(self) -> AzureOpenAI:
         """Create an Azure OpenAI client using managed identity."""
 
-        if self._settings.openai_endpoint is None:
-            message = "ACCELERATORS_OPENAI_ENDPOINT must be configured."
-            raise ValueError(message)
+        endpoint = validate_azure_endpoint(
+            self._settings.openai_endpoint,
+            env_var="ACCELERATORS_OPENAI_ENDPOINT",
+            host_suffix=OPENAI_HOST_SUFFIX,
+        )
 
         credential = DefaultAzureCredential()
         token_provider = get_bearer_token_provider(
@@ -169,7 +186,7 @@ class IngestionPipeline:
             "https://cognitiveservices.azure.com/.default",
         )
         return AzureOpenAI(
-            azure_endpoint=self._settings.openai_endpoint,
+            azure_endpoint=endpoint,
             api_version=self._settings.openai_api_version,
             azure_ad_token_provider=token_provider,
         )

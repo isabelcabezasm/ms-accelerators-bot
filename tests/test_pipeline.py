@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 import tiktoken
+from pydantic import ValidationError
 from src.ingestion.pipeline import (
     IngestionPipeline,
     PipelineSettings,
@@ -230,14 +231,18 @@ def test_embed_batches_requests_at_sixteen() -> None:
 
     openai_client = FakeOpenAIClient()
     search_client = AcceleratorSearchClient(
-        settings=SearchSettings(search_endpoint="https://example.search"),
+        settings=SearchSettings(
+            search_endpoint="https://example.search.windows.net"
+        ),
         index_client=FakeIndexClient(),
         search_client=FakeSearchClient(),
     )
     pipeline = IngestionPipeline(
         search_client=search_client,
         openai_client=openai_client,
-        settings=PipelineSettings(openai_endpoint="https://example.openai"),
+        settings=PipelineSettings(
+            openai_endpoint="https://example.openai.azure.com"
+        ),
     )
     chunks = [
         AcceleratorChunk(
@@ -291,12 +296,16 @@ def test_run_skips_unchanged_documents_and_upserts_changed_chunks() -> None:
     )
     pipeline = IngestionPipeline(
         search_client=AcceleratorSearchClient(
-            settings=SearchSettings(search_endpoint="https://example.search"),
+            settings=SearchSettings(
+                search_endpoint="https://example.search.windows.net"
+            ),
             index_client=index_client,
             search_client=search_client,
         ),
         openai_client=FakeOpenAIClient(),
-        settings=PipelineSettings(openai_endpoint="https://example.openai"),
+        settings=PipelineSettings(
+            openai_endpoint="https://example.openai.azure.com"
+        ),
     )
 
     result = pipeline.run([unchanged_document, changed_document])
@@ -320,3 +329,77 @@ def test_run_skips_unchanged_documents_and_upserts_changed_chunks() -> None:
     assert semantic_config["prioritizedFields"]["titleField"] == {
         "fieldName": "name"
     }
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "http://contoso.openai.azure.com",
+        "https://contoso.example.com",
+    ],
+)
+def test_pipeline_settings_reject_invalid_openai_endpoints(
+    endpoint: str,
+) -> None:
+    """Reject non-Azure or non-HTTPS Azure OpenAI endpoints."""
+
+    with pytest.raises(ValidationError, match="ACCELERATORS_OPENAI_ENDPOINT"):
+        PipelineSettings(openai_endpoint=endpoint)
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "http://contoso.search.windows.net",
+        "https://contoso.example.com",
+    ],
+)
+def test_search_settings_reject_invalid_search_endpoints(
+    endpoint: str,
+) -> None:
+    """Reject non-Azure or non-HTTPS Azure AI Search endpoints."""
+
+    with pytest.raises(ValidationError, match="ACCELERATORS_SEARCH_ENDPOINT"):
+        SearchSettings(search_endpoint=endpoint)
+
+
+@pytest.mark.parametrize("endpoint", [None, "", "   ", "None"])
+def test_pipeline_raises_for_missing_openai_endpoint(
+    endpoint: str | None,
+) -> None:
+    """Raise a ValueError when the OpenAI endpoint is missing."""
+
+    search_client = AcceleratorSearchClient(
+        settings=SearchSettings(
+            search_endpoint="https://example.search.windows.net"
+        ),
+        index_client=FakeIndexClient(),
+        search_client=FakeSearchClient(),
+    )
+    settings = PipelineSettings.model_construct(
+        openai_endpoint=endpoint,
+        openai_api_version="2024-10-21",
+        openai_embedding_deployment="text-embedding-3-large",
+    )
+
+    with pytest.raises(ValueError, match="ACCELERATORS_OPENAI_ENDPOINT"):
+        IngestionPipeline(search_client=search_client, settings=settings)
+
+
+@pytest.mark.parametrize("endpoint", [None, "", "   ", "None"])
+def test_search_client_raises_for_missing_search_endpoint(
+    endpoint: str | None,
+) -> None:
+    """Raise a ValueError when the Search endpoint is missing."""
+
+    settings = SearchSettings.model_construct(
+        search_endpoint=endpoint,
+        search_index_name="accelerators-index",
+        semantic_configuration_name="default-semantic-config",
+        embedding_dimensions=3072,
+        upsert_batch_size=100,
+        retry_attempts=3,
+    )
+
+    with pytest.raises(ValueError, match="ACCELERATORS_SEARCH_ENDPOINT"):
+        AcceleratorSearchClient(settings=settings)
