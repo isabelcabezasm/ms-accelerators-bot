@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from collections.abc import Iterator
 from typing import Any
@@ -104,8 +105,8 @@ def test_configure_telemetry_mocks_azure_monitor_exporter(
 
 
 
-def test_custom_spans_include_user_id() -> None:
-    """Attach the userId dimension to each custom telemetry span."""
+def test_custom_spans_include_hashed_user_id() -> None:
+    """Attach only a hashed user identifier to custom telemetry spans."""
 
     telemetry = configure_telemetry("test-api", reset=True)
     span_exporter = InMemorySpanExporter()
@@ -127,15 +128,20 @@ def test_custom_spans_include_user_id() -> None:
         "llm_generation",
         "embedding",
     ]
+    expected_user_id = _hash_user_id("user-123")
     assert all(
-        (span.attributes or {}).get("userId") == "user-123"
+        (span.attributes or {}).get("userId") == expected_user_id
+        for span in spans
+    )
+    assert all(
+        (span.attributes or {}).get("enduser.id") == expected_user_id
         for span in spans
     )
 
 
 
 def test_tracing_middleware_captures_request_metadata() -> None:
-    """Create a request span with HTTP attributes and parent correlation."""
+    """Create a request span with sanitized attributes and correlation."""
 
     telemetry = configure_telemetry("test-api", reset=True)
     span_exporter = InMemorySpanExporter()
@@ -159,8 +165,13 @@ def test_tracing_middleware_captures_request_metadata() -> None:
         trace_flags=TraceFlags(0x01),
         trace_state=TraceState(),
     )
+    jwt_claims = {
+        "sub": "request-user",
+        "email": "user@example.com",
+        "name": "Example User",
+    }
     carrier: dict[str, str] = {
-        "Authorization": f"Bearer {_build_jwt({'userId': 'request-user'})}",
+        "Authorization": f"Bearer {_build_jwt(jwt_claims)}",
     }
     TraceContextTextMapPropagator().inject(
         carrier,
@@ -184,8 +195,44 @@ def test_tracing_middleware_captures_request_metadata() -> None:
     assert attributes["http.method"] == "GET"
     assert attributes["http.path"] == "/telemetry"
     assert attributes["http.status_code"] == 200
-    assert attributes["userId"] == "request-user"
+    assert attributes["userId"] == _hash_user_id("request-user")
+    assert attributes["enduser.id"] == _hash_user_id("request-user")
     assert attributes["request.duration_ms"] >= 0
+    assert "user@example.com" not in repr(attributes)
+    assert "Example User" not in repr(attributes)
+
+
+
+def test_start_span_sanitizes_user_attributes() -> None:
+    """Drop PII fields and normalize user text before span creation."""
+
+    telemetry = configure_telemetry("test-api", reset=True)
+    span_exporter = InMemorySpanExporter()
+    telemetry.tracer_provider.add_span_processor(
+        SimpleSpanProcessor(span_exporter)
+    )
+
+    with telemetry.start_llm_generation_span(
+        user_id="subject-123",
+        attributes={
+            "prompt": "hello\n<script>\tworld",
+            "email": "user@example.com",
+            "name": "Example User",
+            "attempt": 1,
+            "metadata": {"unsafe": True},
+        },
+    ):
+        pass
+
+    span = _find_span(span_exporter.get_finished_spans(), "llm_generation")
+    assert span is not None
+    attributes = span.attributes or {}
+    assert attributes["prompt"] == "hello <script> world"
+    assert attributes["attempt"] == 1
+    assert attributes["userId"] == _hash_user_id("subject-123")
+    assert "email" not in attributes
+    assert "name" not in attributes
+    assert "metadata" not in attributes
 
 
 
@@ -214,3 +261,10 @@ def _find_span(spans: tuple[Any, ...], name: str) -> Any:
             return span
 
     return None
+
+
+
+def _hash_user_id(user_id: str) -> str:
+    """Return the SHA-256 digest used for telemetry user identifiers."""
+
+    return hashlib.sha256(user_id.encode("utf-8")).hexdigest()

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from time import perf_counter
-from typing import Any
 
 from fastapi import Request, Response
 from opentelemetry import propagate
@@ -13,6 +12,7 @@ from starlette.middleware.base import (
     BaseHTTPMiddleware,
     RequestResponseEndpoint,
 )
+from starlette.types import ASGIApp
 
 from src.api.telemetry import (
     TelemetryManager,
@@ -31,7 +31,7 @@ class TracingMiddleware(BaseHTTPMiddleware):
 
     def __init__(
         self,
-        app: Any,
+        app: ASGIApp,
         telemetry: TelemetryManager | None = None,
     ) -> None:
         """Initialize the middleware with the shared telemetry manager."""
@@ -98,7 +98,9 @@ class TracingMiddleware(BaseHTTPMiddleware):
 def _resolve_request_user_id(request: Request) -> str | None:
     """Resolve the request user identifier from state or JWT claims."""
 
-    explicit_user_id = getattr(request.state, "user_id", None)
+    explicit_user_id = _state_value_as_str(
+        getattr(request.state, "user_id", None)
+    )
     auth_context = getattr(request.state, "auth_context", None)
 
     return resolve_user_id(
@@ -106,3 +108,13 @@ def _resolve_request_user_id(request: Request) -> str | None:
         authorization_header=request.headers.get("Authorization"),
         auth_context=auth_context,
     )
+
+
+
+def _state_value_as_str(value: object) -> str | None:
+    """Return a request state value only when it is already a string."""
+
+    if isinstance(value, str):
+        return value
+
+    return None

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 from collections.abc import Iterator, Mapping
@@ -34,14 +35,23 @@ _USER_ID_CONTEXT: ContextVar[str | None] = ContextVar(
     "telemetry_user_id",
     default=None,
 )
-_USER_CLAIM_KEYS: tuple[str, ...] = (
-    "userId",
-    "user_id",
-    "oid",
-    "sub",
-    "preferred_username",
-    "email",
+type TelemetryAttributeValue = str | int | float | bool
+
+_USER_CLAIM_KEYS: tuple[str, ...] = ("sub",)
+_SENSITIVE_SPAN_ATTRIBUTE_KEYS = frozenset(
+    {
+        "email",
+        "enduser.name",
+        "family_name",
+        "given_name",
+        "name",
+        "preferred_username",
+        "upn",
+        "user.email",
+        "user.name",
+    }
 )
+_MAX_ATTRIBUTE_LENGTH = 512
 _TELEMETRY_LOCK = Lock()
 _TELEMETRY_MANAGER: TelemetryManager | None = None
 
@@ -84,7 +94,7 @@ class TelemetryManager:
     ) -> Iterator[Span]:
         """Start a span enriched with the resolved user identifier."""
 
-        span_attributes = dict(attributes or {})
+        span_attributes = sanitize_span_attributes(attributes)
         resolved_user_id = user_id or get_current_user_id()
         span_attributes.update(build_user_attributes(resolved_user_id))
 
@@ -216,26 +226,60 @@ def get_current_user_id() -> str | None:
 
 
 
+def hash_user_id(user_id: str | None) -> str | None:
+    """Hash a user identifier before emitting it in telemetry."""
+
+    if user_id is None:
+        return None
+
+    normalized_user_id = user_id.strip()
+    if not normalized_user_id:
+        return None
+
+    return hashlib.sha256(normalized_user_id.encode("utf-8")).hexdigest()
+
+
+
+def sanitize_span_attributes(
+    attributes: Mapping[str, Any] | None,
+) -> dict[str, TelemetryAttributeValue]:
+    """Filter span attributes to safe scalar values without PII."""
+
+    span_attributes: dict[str, TelemetryAttributeValue] = {}
+    for key, value in dict(attributes or {}).items():
+        if not isinstance(key, str) or _is_sensitive_span_attribute(key):
+            continue
+
+        sanitized_value = _sanitize_telemetry_value(value)
+        if sanitized_value is not None:
+            span_attributes[key] = sanitized_value
+
+    return span_attributes
+
+
+
 def build_user_attributes(user_id: str | None) -> dict[str, str]:
     """Build span attributes for the current user dimensions."""
 
-    if not user_id:
+    hashed_user_id = hash_user_id(user_id)
+    if hashed_user_id is None:
         return {}
 
     return {
-        "userId": user_id,
-        "enduser.id": user_id,
+        "userId": hashed_user_id,
+        "enduser.id": hashed_user_id,
     }
 
 
 
 def attach_user_id(span: Span, user_id: str | None = None) -> str | None:
-    """Attach the resolved user identifier to an existing span."""
+    """Attach the hashed user identifier to an existing span."""
 
     resolved_user_id = user_id or get_current_user_id()
+    hashed_user_id = hash_user_id(resolved_user_id)
     for key, value in build_user_attributes(resolved_user_id).items():
         span.set_attribute(key, value)
-    return resolved_user_id
+    return hashed_user_id
 
 
 
@@ -278,7 +322,7 @@ def decode_jwt_claims(token: str) -> Mapping[str, Any] | None:
 def extract_user_id_from_claims(
     claims: Mapping[str, Any] | None,
 ) -> str | None:
-    """Resolve the best telemetry user identifier from JWT claims."""
+    """Resolve the telemetry subject identifier from JWT claims."""
 
     if claims is None:
         return None
@@ -300,18 +344,47 @@ def resolve_user_id(
 ) -> str | None:
     """Resolve the best user identifier available for telemetry data."""
 
-    if explicit_user_id:
-        return explicit_user_id
+    if explicit_user_id and explicit_user_id.strip():
+        return explicit_user_id.strip()
 
     context_user_id = extract_user_id_from_auth_context(auth_context)
-    if context_user_id:
-        return context_user_id
+    if context_user_id and context_user_id.strip():
+        return context_user_id.strip()
 
     bearer_token = extract_bearer_token(authorization_header)
     if not bearer_token:
         return None
 
     return extract_user_id_from_claims(decode_jwt_claims(bearer_token))
+
+
+
+def _is_sensitive_span_attribute(key: str) -> bool:
+    """Return whether a span attribute key can contain direct PII."""
+
+    normalized_key = key.strip().casefold()
+    if normalized_key in _SENSITIVE_SPAN_ATTRIBUTE_KEYS:
+        return True
+
+    return normalized_key.endswith(".email")
+
+
+
+def _sanitize_telemetry_value(value: Any) -> TelemetryAttributeValue | None:
+    """Convert telemetry values to safe scalar attributes."""
+
+    if isinstance(value, bool | int | float):
+        return value
+
+    if not isinstance(value, str):
+        return None
+
+    normalized_value = "".join(
+        character if character.isprintable() else " "
+        for character in value
+    )
+    normalized_value = " ".join(normalized_value.split())
+    return normalized_value[:_MAX_ATTRIBUTE_LENGTH]
 
 
 
@@ -412,16 +485,13 @@ def reset_telemetry() -> None:
 def _metric_attributes(
     attributes: Mapping[str, Any] | None,
     user_id: str | None,
-) -> dict[str, str | int | float | bool]:
+) -> dict[str, TelemetryAttributeValue]:
     """Normalize metric dimensions before recording measurements."""
 
-    metric_attributes: dict[str, str | int | float | bool] = {}
-    for key, value in dict(attributes or {}).items():
-        if isinstance(value, (str, int, float, bool)):
-            metric_attributes[key] = value
+    metric_attributes = sanitize_span_attributes(attributes)
 
-    resolved_user_id = user_id or get_current_user_id()
-    if resolved_user_id:
-        metric_attributes["userId"] = resolved_user_id
+    hashed_user_id = hash_user_id(user_id or get_current_user_id())
+    if hashed_user_id is not None:
+        metric_attributes["userId"] = hashed_user_id
 
     return metric_attributes
