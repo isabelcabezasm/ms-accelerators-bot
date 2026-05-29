@@ -62,19 +62,19 @@ variable "deployment_sku_name" {
 variable "chat_deployment_name" {
   description = "Deployment name for the chat model."
   type        = string
-  default     = "gpt-4o-mini"
+  default     = "gpt-4.1-mini"
 }
 
 variable "chat_model_name" {
   description = "Azure OpenAI model name for chat completions."
   type        = string
-  default     = "gpt-4o-mini"
+  default     = "gpt-4.1-mini"
 }
 
 variable "chat_model_version" {
   description = "Version for the chat model deployment."
   type        = string
-  default     = "2024-07-18"
+  default     = "2025-04-14"
 }
 
 variable "chat_deployment_capacity" {

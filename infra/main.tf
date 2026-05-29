@@ -21,6 +21,8 @@ terraform {
 
 provider "azurerm" {
   features {}
+
+  storage_use_azuread = true
 }
 
 provider "azapi" {}
@@ -146,7 +148,7 @@ module "swa" {
   source = "./modules/swa"
 
   name                = "${local.compute_name_prefix}-${var.environment}-${local.unique_suffix}-web"
-  location            = var.location
+  location            = var.static_web_app_location
   resource_group_name = module.resource_group.name
   tags                = local.common_tags
 }

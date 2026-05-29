@@ -41,6 +41,10 @@ resource "azapi_data_plane_resource" "placeholder_index" {
   parent_id = "https://${azurerm_search_service.this.name}.search.windows.net"
   name      = var.index_name
 
+  timeouts {
+    create = "60m"
+  }
+
   body = {
     fields = [
       {

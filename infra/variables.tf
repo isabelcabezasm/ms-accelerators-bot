@@ -15,6 +15,12 @@ variable "location" {
   default     = "swedencentral"
 }
 
+variable "static_web_app_location" {
+  description = "Azure region for the Static Web App."
+  type        = string
+  default     = "westeurope"
+}
+
 variable "project_name" {
   description = "Short project name used in generated resource names."
   type        = string
