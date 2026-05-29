@@ -1,0 +1,5 @@
+resource_group_name  = "rg-terraform-state"
+storage_account_name = "stacceleratorstfstate"
+container_name       = "tfstate"
+key                  = "dev/terraform.tfstate"
+use_azuread_auth     = true
