@@ -1,3 +1,8 @@
+# Bootstrap prerequisites before using this backend file:
+# - the resource group already exists
+# - the storage account already exists
+# - the blob container already exists
+# - you are authenticated to Azure with access to the state container
 resource_group_name  = "rg-terraform-state"
 storage_account_name = "stacceleratorstfstate"
 container_name       = "tfstate"
