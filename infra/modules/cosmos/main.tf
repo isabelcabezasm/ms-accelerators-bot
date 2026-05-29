@@ -39,10 +39,13 @@ resource "azurerm_cosmosdb_sql_container" "this" {
   partition_key_version = 2
 }
 
-resource "azurerm_role_assignment" "data_contributor" {
+resource "azurerm_cosmosdb_sql_role_assignment" "data_contributor" {
   for_each = var.managed_identity_principal_ids
 
-  scope                = azurerm_cosmosdb_account.this.id
-  role_definition_name = "Cosmos DB Built-in Data Contributor"
-  principal_id         = each.value
+  resource_group_name = var.resource_group_name
+  account_name        = azurerm_cosmosdb_account.this.name
+  # Built-in "Cosmos DB Built-in Data Contributor" role definition ID
+  role_definition_id = "${azurerm_cosmosdb_account.this.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
+  principal_id       = each.value
+  scope              = azurerm_cosmosdb_account.this.id
 }

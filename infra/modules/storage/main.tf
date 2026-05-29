@@ -18,10 +18,10 @@ resource "azurerm_storage_container" "this" {
   container_access_type = "private"
 }
 
-resource "azurerm_role_assignment" "blob_reader" {
+resource "azurerm_role_assignment" "blob_contributor" {
   for_each = var.managed_identity_principal_ids
 
   scope                = azurerm_storage_account.this.id
-  role_definition_name = "Storage Blob Data Reader"
+  role_definition_name = "Storage Blob Data Contributor"
   principal_id         = each.value
 }
