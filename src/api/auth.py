@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
+from dataclasses import dataclass
+from threading import RLock
+from time import monotonic
 from typing import Annotated, Any, Final, cast
+from urllib.parse import urlparse
 
 import httpx
 import jwt
-from cachetools import TTLCache
 from fastapi import Depends, Header, HTTPException, status
 from jwt import ExpiredSignatureError, InvalidTokenError
 from jwt.algorithms import RSAAlgorithm
@@ -20,17 +23,33 @@ from src.api.models import UserClaims
 
 LOGGER = logging.getLogger(__name__)
 AUTH_SCHEME: Final[str] = "Bearer"
-_CACHE_MAXSIZE: Final[int] = 8
-_JWKS_CACHE: TTLCache[str, dict[str, Any]] = TTLCache(
-    maxsize=_CACHE_MAXSIZE,
-    ttl=300,
+_TRUSTED_AZURE_AD_HOSTS: Final[frozenset[str]] = frozenset(
+    {
+        "login.microsoftonline.com",
+        "login.microsoftonline.us",
+        "login.microsoftonline.de",
+        "login.chinacloudapi.cn",
+    }
 )
+
+
+@dataclass(slots=True)
+class _CachedJwksDocument:
+    """Store a JWKS payload together with its monotonic expiry time."""
+
+    document: dict[str, Any]
+    expires_at: float
+
+
+_JWKS_CACHE: dict[str, _CachedJwksDocument] = {}
+_JWKS_CACHE_LOCK: Final[RLock] = RLock()
 
 
 def clear_jwks_cache() -> None:
     """Clear the in-memory JWKS cache used by token validation."""
 
-    _JWKS_CACHE.clear()
+    with _JWKS_CACHE_LOCK:
+        _JWKS_CACHE.clear()
 
 
 def _unauthorized(detail: str) -> HTTPException:
@@ -69,26 +88,70 @@ def extract_bearer_token(authorization_header: str | None) -> str:
     return stripped_token
 
 
+def _build_azure_ad_jwks_url(issuer: str) -> str:
+    """Build a trusted Microsoft JWKS URL from the configured issuer."""
+
+    parsed_issuer = urlparse(issuer)
+    hostname = parsed_issuer.hostname
+    normalized_host = hostname.lower() if hostname else None
+    if (
+        parsed_issuer.scheme != "https"
+        or normalized_host is None
+        or normalized_host not in _TRUSTED_AZURE_AD_HOSTS
+        or parsed_issuer.username is not None
+        or parsed_issuer.password is not None
+        or parsed_issuer.port is not None
+    ):
+        raise RuntimeError("AZURE_AD_ISSUER must use a trusted Azure AD URL.")
+
+    path_segments = [
+        segment for segment in parsed_issuer.path.split("/") if segment
+    ]
+    if not path_segments:
+        raise RuntimeError("AZURE_AD_ISSUER must include an Azure tenant.")
+
+    if len(path_segments) > 2:
+        raise RuntimeError("AZURE_AD_ISSUER has an unsupported path.")
+
+    if len(path_segments) == 2 and path_segments[1] != "v2.0":
+        raise RuntimeError("AZURE_AD_ISSUER has an unsupported path.")
+
+    tenant = path_segments[0]
+    return (
+        f"{parsed_issuer.scheme}://{normalized_host}/{tenant}"
+        "/discovery/v2.0/keys"
+    )
+
+
+def _get_cached_jwks_document(jwks_url: str) -> dict[str, Any] | None:
+    """Return a cached JWKS document when the entry is still fresh."""
+
+    cached_entry = _JWKS_CACHE.get(jwks_url)
+    if cached_entry is None:
+        return None
+
+    if cached_entry.expires_at <= monotonic():
+        _JWKS_CACHE.pop(jwks_url, None)
+        return None
+
+    return cached_entry.document
+
+
 def _cache_jwks_document(
     jwks_url: str,
     jwks_document: dict[str, Any],
     ttl_seconds: int,
 ) -> None:
-    """Store the JWKS document in a TTL cache keyed by endpoint URL."""
+    """Store the JWKS document with a per-entry expiry."""
 
-    global _JWKS_CACHE
+    _JWKS_CACHE[jwks_url] = _CachedJwksDocument(
+        document=jwks_document,
+        expires_at=monotonic() + ttl_seconds,
+    )
 
-    if _JWKS_CACHE.ttl != ttl_seconds:
-        _JWKS_CACHE = TTLCache(maxsize=_CACHE_MAXSIZE, ttl=ttl_seconds)
-    _JWKS_CACHE[jwks_url] = jwks_document
 
-
-def fetch_jwks_document(jwks_url: str, ttl_seconds: int) -> dict[str, Any]:
-    """Fetch and cache the JWKS document used for signature validation."""
-
-    cached_document = _JWKS_CACHE.get(jwks_url)
-    if cached_document is not None:
-        return cached_document
+def _fetch_jwks_document_from_remote(jwks_url: str) -> dict[str, Any]:
+    """Fetch a JWKS document from the trusted Azure AD endpoint."""
 
     try:
         with httpx.Client(timeout=5.0) as client:
@@ -108,9 +171,20 @@ def fetch_jwks_document(jwks_url: str, ttl_seconds: int) -> dict[str, Any]:
         LOGGER.error("Received malformed JWKS payload from %s", jwks_url)
         raise _unauthorized("Authentication service unavailable.")
 
-    _cache_jwks_document(jwks_url, jwks_payload, ttl_seconds)
-    jwks_document = jwks_payload
-    return jwks_document
+    return jwks_payload
+
+
+def fetch_jwks_document(jwks_url: str, ttl_seconds: int) -> dict[str, Any]:
+    """Fetch and cache the JWKS document used for signature validation."""
+
+    with _JWKS_CACHE_LOCK:
+        cached_document = _get_cached_jwks_document(jwks_url)
+        if cached_document is not None:
+            return cached_document
+
+        jwks_document = _fetch_jwks_document_from_remote(jwks_url)
+        _cache_jwks_document(jwks_url, jwks_document, ttl_seconds)
+        return jwks_document
 
 
 def _select_signing_key(
@@ -162,7 +236,7 @@ def validate_jwt_token(token: str, settings: Settings) -> UserClaims:
     try:
         audience = settings.require_azure_ad_client_id()
         issuer = settings.resolve_azure_ad_issuer()
-        jwks_url = settings.resolve_azure_ad_jwks_url()
+        jwks_url = _build_azure_ad_jwks_url(issuer)
     except RuntimeError:
         LOGGER.exception("Azure AD authentication settings are incomplete.")
         raise _authentication_configuration_error() from None
@@ -207,7 +281,7 @@ def validate_jwt_token(token: str, settings: Settings) -> UserClaims:
     return _build_user_claims(token_claims)
 
 
-async def get_current_user(
+def get_current_user(
     settings: Annotated[Settings, Depends(get_app_settings)],
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> UserClaims:

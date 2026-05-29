@@ -19,7 +19,9 @@ from src.api.models import UserClaims
 TENANT_ID = "test-tenant-id"
 CLIENT_ID = "test-client-id"
 ISSUER = f"https://login.microsoftonline.com/{TENANT_ID}/v2.0"
-JWKS_URL = f"{ISSUER}/discovery/v2.0/keys"
+JWKS_URL = (
+    f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys"
+)
 KEY_ID = "test-key-id"
 
 
@@ -230,6 +232,77 @@ def test_get_current_user_rejects_malformed_token(
     response = client.get(
         "/me",
         headers={"Authorization": "Bearer not-a-valid-jwt"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid access token."}
+
+
+def test_get_current_user_rejects_untrusted_jwks_url(
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject issuers that would derive a non-Microsoft JWKS URL."""
+
+    monkeypatch.setenv(
+        "AZURE_AD_ISSUER",
+        f"https://evil.example.com/{TENANT_ID}/v2.0",
+    )
+    get_settings.cache_clear()
+
+    def build_client(*args: object, **kwargs: object) -> MockHttpxClient:
+        """Fail the test if auth attempts to fetch an untrusted JWKS URL."""
+
+        del args, kwargs
+        raise AssertionError(
+            "JWKS fetch should not run for untrusted issuers."
+        )
+
+    monkeypatch.setattr("src.api.auth.httpx.Client", build_client)
+
+    client = TestClient(app)
+    response = client.get("/me", headers={"Authorization": "Bearer any"})
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "detail": "Authentication is not configured.",
+    }
+
+
+def test_get_current_user_rejects_non_rs256_tokens(
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject tokens that do not use the pinned RS256 algorithm."""
+
+    token = jwt.encode(
+        {
+            "sub": "user-123",
+            "email": "joey@example.com",
+            "name": "Joey Backend",
+            "iss": ISSUER,
+            "aud": CLIENT_ID,
+            "exp": datetime.now(UTC) + timedelta(minutes=5),
+        },
+        "shared-secret-for-hs256-regression-checks",
+        algorithm="HS256",
+        headers={"kid": KEY_ID},
+    )
+
+    def build_client(*args: object, **kwargs: object) -> MockHttpxClient:
+        """Fail the test if a non-RS256 token reaches JWKS fetching."""
+
+        del args, kwargs
+        raise AssertionError(
+            "JWKS fetch should not run for HS256 tokens."
+        )
+
+    monkeypatch.setattr("src.api.auth.httpx.Client", build_client)
+
+    client = TestClient(app)
+    response = client.get(
+        "/me",
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     assert response.status_code == 401
