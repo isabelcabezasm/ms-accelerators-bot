@@ -27,6 +27,20 @@ output "application_insights_id" {
 output "log_analytics_workspace_id" {
   description = "Resource ID of the shared Log Analytics workspace."
   value       = module.monitoring.log_analytics_workspace_id
+
+output "cosmos_account_id" {
+  description = "Resource ID of the Cosmos DB account."
+  value       = module.cosmos.account_id
+}
+
+output "storage_account_id" {
+  description = "Resource ID of the storage account."
+  value       = module.storage.account_id
+}
+
+output "key_vault_id" {
+  description = "Resource ID of the Key Vault."
+  value       = module.keyvault.id
 }
 
 output "resource_ids" {
@@ -35,5 +49,12 @@ output "resource_ids" {
     app_insights   = module.monitoring.id
     log_analytics  = module.monitoring.log_analytics_workspace_id
     resource_group = module.resource_group.id
+
+    cosmos_account    = module.cosmos.account_id
+    cosmos_container  = module.cosmos.container_id
+    key_vault         = module.keyvault.id
+    resource_group    = module.resource_group.id
+    storage_account   = module.storage.account_id
+    storage_container = module.storage.container_id
   }
 }
