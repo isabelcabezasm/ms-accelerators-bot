@@ -13,15 +13,9 @@ output "resource_group_name" {
   value       = module.resource_group.name
 }
 
-output "application_insights_connection_string_api" {
-  description = "Application Insights connection string for the API workload."
-  value       = module.monitoring.api_connection_string
-  sensitive   = true
-}
-
-output "application_insights_connection_string_functions" {
-  description = "Application Insights connection string for the Functions workload."
-  value       = module.monitoring.functions_connection_string
+output "application_insights_connection_string" {
+  description = "Application Insights connection string shared by all workloads."
+  value       = module.monitoring.application_insights_connection_string
   sensitive   = true
 }
 

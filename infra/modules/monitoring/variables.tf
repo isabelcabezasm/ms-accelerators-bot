@@ -19,8 +19,8 @@ variable "sampling_percentage" {
   default     = 20
 
   validation {
-    condition     = var.sampling_percentage >= 10 && var.sampling_percentage <= 20
-    error_message = "sampling_percentage must be between 10 and 20."
+    condition     = var.sampling_percentage >= 0 && var.sampling_percentage <= 100
+    error_message = "sampling_percentage must be between 0 and 100."
   }
 }
 

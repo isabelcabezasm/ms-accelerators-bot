@@ -9,19 +9,7 @@ output "name" {
 }
 
 output "application_insights_connection_string" {
-  description = "Shared Application Insights connection string for application workloads."
-  value       = azurerm_application_insights.this.connection_string
-  sensitive   = true
-}
-
-output "api_connection_string" {
-  description = "Application Insights connection string for the API workload."
-  value       = azurerm_application_insights.this.connection_string
-  sensitive   = true
-}
-
-output "functions_connection_string" {
-  description = "Application Insights connection string for the Functions workload."
+  description = "Application Insights connection string shared by all workloads."
   value       = azurerm_application_insights.this.connection_string
   sensitive   = true
 }
