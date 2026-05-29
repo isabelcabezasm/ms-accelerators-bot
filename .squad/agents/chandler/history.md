@@ -8,3 +8,7 @@
 ## Learnings
 
 <!-- Append new learnings below. Each entry is something lasting about the project. -->
+
+### 2026-05-29 — PRD Decomposed into 33 GitHub Issues
+
+Monica (Lead) created 33 issues (#1–#33) across 6 phases from `docs/proposal.md`. **Your assignments:** Security domain (#5, #6, #13, #16, #17, #24) — Front Door + WAF, Entra External ID, JWT validation, per-user quotas, GDPR endpoints, custom domain. See decisions.md for full details and squad assignments. **Blocked:** Project board linking needs Isabel to refresh token scope (`gh auth refresh -s read:project`).

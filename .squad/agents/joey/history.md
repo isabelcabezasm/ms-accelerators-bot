@@ -8,3 +8,7 @@
 ## Learnings
 
 <!-- Append new learnings below. Each entry is something lasting about the project. -->
+
+### 2026-05-29 — PRD Decomposed into 33 GitHub Issues
+
+Monica (Lead) created 33 issues (#1–#33) across 6 phases from `docs/proposal.md`. **Your assignments:** Backend lead (#9–#19, #28, #30–#33) — ingestion pipeline, retrieval API, chat endpoint, load testing, stretch features. See decisions.md for full details and squad assignments. **Blocked:** Project board linking needs Isabel to refresh token scope (`gh auth refresh -s read:project`).
