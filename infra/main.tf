@@ -122,4 +122,20 @@ module "swa" {
   location            = var.location
   resource_group_name = module.resource_group.name
   tags                = local.common_tags
+
+module "front_door" {
+  count = var.front_door_enabled ? 1 : 0
+
+  source = "./modules/front_door"
+
+  name                     = "${local.name_prefix}-fd"
+  resource_group_name      = module.resource_group.name
+  sku_name                 = var.front_door_sku_name
+  response_timeout_seconds = var.front_door_response_timeout_seconds
+  endpoint_name            = var.front_door_endpoint_name
+  waf_mode                 = var.front_door_waf_mode
+  swa_origin               = var.front_door_swa_origin
+  container_app_origin     = var.front_door_container_app_origin
+  custom_domains           = var.front_door_custom_domains
+  tags                     = local.common_tags
 }
