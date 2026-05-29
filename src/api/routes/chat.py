@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.api.auth import get_current_user
 from src.api.models import ChatRequest, ChatResponse, UserClaims
+from src.api.quota_dependency import enforce_daily_chat_quota
 from src.api.rag import (
     AnswerGenerator,
     HybridRetriever,
@@ -24,21 +25,21 @@ router = APIRouter(tags=["chat"])
 
 @lru_cache(maxsize=1)
 def get_query_rewriter() -> QueryRewriter:
-    """Returns a cached query rewriter dependency."""
+    """Return a cached query rewriter dependency."""
 
     return QueryRewriter()
 
 
 @lru_cache(maxsize=1)
 def get_hybrid_retriever() -> HybridRetriever:
-    """Returns a cached retriever dependency."""
+    """Return a cached retriever dependency."""
 
     return HybridRetriever()
 
 
 @lru_cache(maxsize=1)
 def get_answer_generator() -> AnswerGenerator:
-    """Returns a cached answer generator dependency."""
+    """Return a cached answer generator dependency."""
 
     return AnswerGenerator()
 
@@ -47,6 +48,7 @@ def get_answer_generator() -> AnswerGenerator:
     "/chat",
     response_model=ChatResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(enforce_daily_chat_quota)],
 )
 async def post_chat(
     request: ChatRequest,
@@ -55,7 +57,7 @@ async def post_chat(
     retriever: Annotated[HybridRetriever, Depends(get_hybrid_retriever)],
     generator: Annotated[AnswerGenerator, Depends(get_answer_generator)],
 ) -> ChatResponse:
-    """Runs query rewrite, hybrid search, and answer generation."""
+    """Run query rewrite, hybrid search, and answer generation."""
 
     conversation_id = request.conversation_id or str(uuid4())
     LOGGER.info(

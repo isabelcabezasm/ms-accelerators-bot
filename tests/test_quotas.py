@@ -7,11 +7,17 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from azure.cosmos.exceptions import CosmosResourceNotFoundError
-from fastapi import Depends, FastAPI
+from azure.core import MatchConditions
+from azure.cosmos.exceptions import (
+    CosmosHttpResponseError,
+    CosmosResourceNotFoundError,
+)
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from src.api.auth import get_current_user
 from src.api.dependencies import get_quota_service
+from src.api.main import create_app
 from src.api.models import UserClaims
 from src.api.quota_dependency import enforce_daily_chat_quota
 from src.api.quotas import (
@@ -31,12 +37,36 @@ class FakeContainerClient:
     def __init__(
         self,
         items: dict[tuple[str, str], dict[str, Any]] | None = None,
+        *,
+        create_conflicts: int = 0,
+        upsert_conflicts: int = 0,
     ) -> None:
         """Seed the fake container with optional existing documents."""
 
-        self.items = items or {}
+        self._etag_counter = 0
+        self.items = {
+            item_key: self._with_etag(document)
+            for item_key, document in (items or {}).items()
+        }
+        self.create_conflicts_remaining = create_conflicts
+        self.upsert_conflicts_remaining = upsert_conflicts
         self.created_items: list[dict[str, Any]] = []
-        self.replaced_items: list[dict[str, Any]] = []
+        self.upserted_items: list[dict[str, Any]] = []
+        self.upsert_calls: list[dict[str, Any]] = []
+
+    def _next_etag(self) -> str:
+        """Generate a deterministic ETag for the next stored version."""
+
+        self._etag_counter += 1
+        return f"etag-{self._etag_counter}"
+
+    def _with_etag(self, document: dict[str, Any]) -> dict[str, Any]:
+        """Return a copy of the document that always includes an ETag."""
+
+        stored_document = dict(document)
+        if "_etag" not in stored_document:
+            stored_document["_etag"] = self._next_etag()
+        return stored_document
 
     def read_item(self, *, item: str, partition_key: str) -> dict[str, Any]:
         """Return the stored item for the given partition and id."""
@@ -47,29 +77,69 @@ class FakeContainerClient:
         return dict(stored_item)
 
     def create_item(self, *, body: dict[str, Any]) -> dict[str, Any]:
-        """Persist a new item and capture it for assertions."""
+        """Persist a new item or raise a conflict for concurrent writes."""
 
         item_key = (body["user_id"], body["id"])
-        document = dict(body)
+        if self.create_conflicts_remaining > 0:
+            self.create_conflicts_remaining -= 1
+            self.items[item_key] = self._with_etag(body)
+            raise CosmosHttpResponseError(status_code=409, message="conflict")
+
+        if item_key in self.items:
+            raise CosmosHttpResponseError(status_code=409, message="conflict")
+
+        document = self._with_etag(body)
         self.items[item_key] = document
         self.created_items.append(document)
         return dict(document)
 
-    def replace_item(
+    def upsert_item(
         self,
         *,
-        item: str,
         body: dict[str, Any],
-        etag: str | None = None,
-        match_condition: object | None = None,
+        etag: str,
+        match_condition: MatchConditions,
     ) -> dict[str, Any]:
-        """Replace an existing item while ignoring Cosmos SDK metadata."""
+        """Upsert an item while enforcing Cosmos optimistic locking."""
 
-        del etag, match_condition
-        item_key = (body["user_id"], item)
-        document = dict(body)
+        item_key = (body["user_id"], body["id"])
+        current_document = self.items.get(item_key)
+        if current_document is None:
+            raise CosmosResourceNotFoundError(message="missing item")
+
+        self.upsert_calls.append(
+            {
+                "body": dict(body),
+                "etag": etag,
+                "match_condition": match_condition,
+            }
+        )
+
+        if self.upsert_conflicts_remaining > 0:
+            self.upsert_conflicts_remaining -= 1
+            concurrent_document = dict(current_document)
+            concurrent_document["count"] = int(
+                concurrent_document.get("count", 0)
+            ) + 1
+            concurrent_document["_etag"] = self._next_etag()
+            self.items[item_key] = concurrent_document
+            raise CosmosHttpResponseError(
+                status_code=412,
+                message="etag conflict",
+            )
+
+        if (
+            match_condition is MatchConditions.IfNotModified
+            and current_document.get("_etag") != etag
+        ):
+            raise CosmosHttpResponseError(
+                status_code=412,
+                message="etag mismatch",
+            )
+
+        document = self._with_etag(body)
         self.items[item_key] = document
-        self.replaced_items.append(document)
+        self.upserted_items.append(document)
         return dict(document)
 
 
@@ -119,6 +189,7 @@ def test_quota_check_passes_when_under_limit() -> None:
 
     assert document["count"] == 1
     assert container_client.created_items[0]["user_id"] == "user-123"
+    assert container_client.created_items[0]["_etag"].startswith("etag-")
 
 
 def test_quota_check_fails_when_limit_exceeded(
@@ -156,7 +227,7 @@ def test_quota_check_fails_when_limit_exceeded(
 
 
 def test_counter_increments_correctly() -> None:
-    """Increment an existing daily counter on each successful request."""
+    """Increment an existing daily counter using conditional upsert."""
 
     document_id = "user-123:2026-05-29"
     container_client = FakeContainerClient(
@@ -175,7 +246,75 @@ def test_counter_increments_correctly() -> None:
     document = service.check_and_increment("user-123")
 
     assert document["count"] == 2
-    assert container_client.replaced_items[0]["count"] == 2
+    assert container_client.upserted_items[0]["count"] == 2
+    assert container_client.upsert_calls[0]["match_condition"] is (
+        MatchConditions.IfNotModified
+    )
+
+
+def test_concurrent_create_retries_after_conflict() -> None:
+    """Retry a create conflict and apply the second increment safely."""
+
+    container_client = FakeContainerClient(create_conflicts=1)
+    service = build_service(container_client, daily_limit=3)
+
+    document = service.check_and_increment("user-123")
+
+    assert document["count"] == 2
+    assert len(container_client.upserted_items) == 1
+    assert container_client.upserted_items[0]["count"] == 2
+
+
+def test_concurrent_increment_retries_after_etag_conflict() -> None:
+    """Retry a 412 conflict so concurrent requests cannot bypass quotas."""
+
+    document_id = "user-123:2026-05-29"
+    container_client = FakeContainerClient(
+        items={
+            ("user-123", document_id): {
+                "id": document_id,
+                "user_id": "user-123",
+                "date": "2026-05-29",
+                "count": 0,
+                "ttl": COSMOS_ITEM_TTL_SECONDS,
+            }
+        },
+        upsert_conflicts=1,
+    )
+    service = build_service(container_client, daily_limit=3)
+
+    document = service.check_and_increment("user-123")
+
+    assert document["count"] == 2
+    assert len(container_client.upsert_calls) == 2
+    assert container_client.upserted_items[0]["count"] == 2
+
+
+def test_missing_etag_fails_closed() -> None:
+    """Reject updates when Cosmos does not return the required ETag."""
+
+    document_id = "user-123:2026-05-29"
+    container_client = FakeContainerClient(
+        items={
+            ("user-123", document_id): {
+                "id": document_id,
+                "user_id": "user-123",
+                "date": "2026-05-29",
+                "count": 1,
+                "ttl": COSMOS_ITEM_TTL_SECONDS,
+                "_etag": "",
+            }
+        }
+    )
+    service = build_service(container_client, daily_limit=3)
+
+    with pytest.raises(HTTPException) as error:
+        service.check_and_increment("user-123")
+
+    assert getattr(error.value, "status_code", None) == 503
+    assert getattr(error.value, "detail", "") == (
+        "Quota service is unavailable."
+    )
 
 
 def test_ttl_is_set_on_documents() -> None:
@@ -291,3 +430,18 @@ def test_quota_service_uses_managed_identity(
     }
 
 
+def test_real_chat_route_wires_quota_dependency() -> None:
+    """Attach the quota dependency to the repository's actual /chat route."""
+
+    app = create_app()
+    chat_route = next(
+        route
+        for route in app.routes
+        if isinstance(route, APIRoute) and route.path == "/chat"
+    )
+
+    dependency_calls = {
+        dependency.call for dependency in chat_route.dependant.dependencies
+    }
+
+    assert enforce_daily_chat_quota in dependency_calls

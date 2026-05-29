@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Protocol, cast
 
 from azure.core import MatchConditions
 from azure.cosmos import CosmosClient
@@ -24,6 +24,28 @@ LOGGER = logging.getLogger(__name__)
 COSMOS_HOST_SUFFIX = ".documents.azure.com"
 COSMOS_ITEM_TTL_SECONDS = 48 * 60 * 60
 _MAX_WRITE_ATTEMPTS = 3
+_RETRYABLE_WRITE_STATUS_CODES = frozenset({409, 412})
+
+QuotaDocument = dict[str, Any]
+
+
+class CosmosQuotaContainer(Protocol):
+    """Typed subset of the Cosmos container client used by quotas."""
+
+    def read_item(self, *, item: str, partition_key: str) -> QuotaDocument:
+        """Read a quota document by id and partition key."""
+
+    def create_item(self, *, body: QuotaDocument) -> QuotaDocument:
+        """Create a new quota document."""
+
+    def upsert_item(
+        self,
+        *,
+        body: QuotaDocument,
+        etag: str,
+        match_condition: MatchConditions,
+    ) -> QuotaDocument:
+        """Upsert a quota document with optimistic concurrency checks."""
 
 
 class QuotaSettings(BaseSettings):
@@ -88,7 +110,7 @@ class QuotaService:
         settings: QuotaSettings | None = None,
         credential: Any | None = None,
         cosmos_client: CosmosClient | Any | None = None,
-        container_client: Any | None = None,
+        container_client: CosmosQuotaContainer | None = None,
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         """Create the quota service using managed identity by default."""
@@ -99,7 +121,7 @@ class QuotaService:
         self._container_client = container_client
         self._now_provider = now_provider or self._utc_now
 
-    def check_and_increment(self, user_id: str) -> dict[str, Any]:
+    def check_and_increment(self, user_id: str) -> QuotaDocument:
         """Consume one chat quota unit for the given user."""
 
         normalized_user_id = user_id.strip()
@@ -127,10 +149,7 @@ class QuotaService:
                 try:
                     container_client.create_item(body=new_document)
                 except CosmosHttpResponseError as error:
-                    if (
-                        getattr(error, "status_code", None) == 409
-                        and attempt < _MAX_WRITE_ATTEMPTS - 1
-                    ):
+                    if self._should_retry_write(error, attempt):
                         continue
                     self._raise_service_unavailable(error)
                 return new_document
@@ -153,17 +172,13 @@ class QuotaService:
                 count=current_count + 1,
             )
             try:
-                self._replace_document(
+                self._upsert_document(
                     container_client,
-                    item_id=item_id,
                     current_document=document,
                     updated_document=updated_document,
                 )
             except CosmosHttpResponseError as error:
-                if (
-                    getattr(error, "status_code", None) == 412
-                    and attempt < _MAX_WRITE_ATTEMPTS - 1
-                ):
+                if self._should_retry_write(error, attempt):
                     continue
                 self._raise_service_unavailable(error)
             return updated_document
@@ -173,7 +188,7 @@ class QuotaService:
             detail="Quota service is unavailable.",
         )
 
-    def _get_container_client(self) -> Any:
+    def _get_container_client(self) -> CosmosQuotaContainer:
         """Create the Cosmos container client lazily for testability."""
 
         if self._container_client is not None:
@@ -191,14 +206,17 @@ class QuotaService:
         database_client = self._cosmos_client.get_database_client(
             self._settings.cosmos_database,
         )
-        self._container_client = database_client.get_container_client(
-            self._settings.cosmos_container_quotas,
+        self._container_client = cast(
+            CosmosQuotaContainer,
+            database_client.get_container_client(
+                self._settings.cosmos_container_quotas,
+            ),
         )
         return self._container_client
 
     def _read_document(
         self,
-        container_client: Any,
+        container_client: CosmosQuotaContainer,
         *,
         item_id: str,
         user_id: str,
@@ -215,27 +233,39 @@ class QuotaService:
         except CosmosHttpResponseError as error:
             self._raise_service_unavailable(error)
 
-    def _replace_document(
+    def _upsert_document(
         self,
-        container_client: Any,
+        container_client: CosmosQuotaContainer,
         *,
-        item_id: str,
         current_document: Mapping[str, Any],
-        updated_document: dict[str, Any],
+        updated_document: QuotaDocument,
     ) -> None:
-        """Replace an existing counter document using optimistic locking."""
+        """Upsert an existing counter document using optimistic locking."""
 
-        replace_kwargs: dict[str, Any] = {
-            "item": item_id,
-            "body": updated_document,
-        }
-        etag = current_document.get("_etag")
+        container_client.upsert_item(
+            body=updated_document,
+            etag=self._require_document_etag(current_document),
+            match_condition=MatchConditions.IfNotModified,
+        )
+
+    def _require_document_etag(
+        self,
+        document: Mapping[str, Any],
+    ) -> str:
+        """Require the Cosmos ETag needed for an atomic quota update."""
+
+        etag = document.get("_etag")
         if isinstance(etag, str) and etag:
-            replace_kwargs["etag"] = etag
-            replace_kwargs["match_condition"] = (
-                MatchConditions.IfNotModified
-            )
-        container_client.replace_item(**replace_kwargs)
+            return etag
+
+        LOGGER.error(
+            "Quota document missing _etag; refusing non-atomic update",
+            extra={"document_id": document.get("id")},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Quota service is unavailable.",
+        )
 
     def _read_count(self, document: Mapping[str, Any]) -> int:
         """Normalize the current quota count stored in Cosmos DB."""
@@ -256,7 +286,7 @@ class QuotaService:
         user_id: str,
         quota_date: str,
         count: int,
-    ) -> dict[str, Any]:
+    ) -> QuotaDocument:
         """Build the persisted Cosmos document for a daily counter."""
 
         return {
@@ -291,6 +321,19 @@ class QuotaService:
         ) + timedelta(days=1)
         remaining_seconds = int((next_day - current_time).total_seconds())
         return max(1, remaining_seconds)
+
+    def _should_retry_write(
+        self,
+        error: CosmosHttpResponseError,
+        attempt: int,
+    ) -> bool:
+        """Retry transient quota write conflicts a limited number of times."""
+
+        status_code = getattr(error, "status_code", None)
+        return (
+            status_code in _RETRYABLE_WRITE_STATUS_CODES
+            and attempt < _MAX_WRITE_ATTEMPTS - 1
+        )
 
     def _raise_service_unavailable(
         self,

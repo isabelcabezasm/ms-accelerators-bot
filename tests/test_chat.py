@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from src.api.auth import get_current_user
+from src.api.dependencies import get_quota_service
 from src.api.main import app
 from src.api.models import UserClaims
 from src.api.models.chat import Citation
@@ -155,6 +156,16 @@ class StubGenerator:
                 }
             ],
         )
+
+
+class StubQuotaService:
+    """Simple quota service double for chat route tests."""
+
+    def check_and_increment(self, user_id: str) -> dict[str, int]:
+        """Pretend the request consumed quota successfully."""
+
+        del user_id
+        return {"count": 1}
 
 
 class MockChatResponse:
@@ -317,6 +328,7 @@ def test_authenticated_chat_request_succeeds(
     """Return a chat answer when the caller is authenticated."""
 
     app.dependency_overrides[get_current_user] = lambda: authenticated_user
+    app.dependency_overrides[get_quota_service] = StubQuotaService
     app.dependency_overrides[get_query_rewriter] = StubQueryRewriter
     app.dependency_overrides[get_hybrid_retriever] = StubRetriever
     app.dependency_overrides[get_answer_generator] = StubGenerator
@@ -363,6 +375,7 @@ def test_chat_requires_authentication(client: TestClient) -> None:
 def test_chat_requires_authentication(client: TestClient) -> None:
     """Reject unauthenticated chat requests with a 401 response."""
 
+    app.dependency_overrides[get_quota_service] = StubQuotaService
     app.dependency_overrides[get_query_rewriter] = StubQueryRewriter
     app.dependency_overrides[get_hybrid_retriever] = StubRetriever
     app.dependency_overrides[get_answer_generator] = StubGenerator
@@ -488,6 +501,7 @@ def test_chat_rejects_empty_message(
     """Reject whitespace-only chat messages with validation errors."""
 
     app.dependency_overrides[get_current_user] = lambda: authenticated_user
+    app.dependency_overrides[get_quota_service] = StubQuotaService
     app.dependency_overrides[get_query_rewriter] = StubQueryRewriter
     app.dependency_overrides[get_hybrid_retriever] = StubRetriever
     app.dependency_overrides[get_answer_generator] = StubGenerator
