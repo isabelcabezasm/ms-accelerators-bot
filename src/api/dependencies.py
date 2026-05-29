@@ -15,5 +15,6 @@ def get_app_settings() -> Settings:
 @lru_cache
 def get_search_service() -> SearchService:
     """Build the search service dependency for request handlers."""
+    """Create and cache the Azure-backed search service dependency."""
 
     return SearchService()

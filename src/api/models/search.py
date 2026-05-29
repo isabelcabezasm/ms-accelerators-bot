@@ -1,4 +1,5 @@
 """Search response models for API contracts."""
+"""Pydantic models for the search API."""
 
 from __future__ import annotations
 
@@ -22,11 +23,29 @@ class SearchResult(BaseModel):
 class SearchResponse(BaseModel):
     """Represent the public payload returned by the search endpoint."""
 
-    model_config = ConfigDict(extra="ignore")
 
     query: str = Field(description="Normalized search text.")
     top: int = Field(ge=1, description="Maximum number of results returned.")
     results: list[SearchResult] = Field(
         default_factory=list,
         description="Ranked accelerator search results.",
+    """Represent a single ranked search result."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(description="Display title for the matched item.")
+        description="Short description chosen for the search result."
+    )
+    score: float = Field(
+        description="Ranking score returned by Azure AI Search."
+    )
+    url: str = Field(description="Canonical URL for the matched item.")
+
+
+    """Represent the response payload returned by the search endpoint."""
+
+
+    query: str = Field(description="Normalized user query string.")
+    top: int = Field(description="Maximum number of results requested.")
+        description="Ranked search results.",
     )
