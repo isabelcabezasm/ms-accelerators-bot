@@ -40,6 +40,10 @@ class GitHubRateLimitError(GitHubFetcherError):
     """Raise when GitHub rate limiting persists beyond retry limits."""
 
 
+class GitHubBaseUrlError(GitHubFetcherError):
+    """Raise when the configured GitHub API base URL is not trusted."""
+
+
 class GitHubFetcher:
     """Fetch and cache GitHub README documents for accelerator repos."""
 
@@ -52,19 +56,24 @@ class GitHubFetcher:
         secret_client: SecretReader | None = None,
         http_client: httpx.AsyncClient | None = None,
         base_url: str = "https://api.github.com",
+        allowed_base_url_domains: tuple[str, ...] = (),
         max_retries: int = 3,
         base_backoff_seconds: float = 1.0,
         max_backoff_seconds: float = 30.0,
     ) -> None:
         """Initialize the fetcher with Key Vault and GitHub API clients."""
 
+        validated_base_url = self._validate_base_url(
+            base_url,
+            allowed_domains=allowed_base_url_domains,
+        )
         self._credential = credential or DefaultAzureCredential()
         self._secret_client = secret_client or SecretClient(
             vault_url=key_vault_url,
             credential=self._credential,
         )
         self._http_client = http_client or httpx.AsyncClient(
-            base_url=base_url,
+            base_url=validated_base_url,
             timeout=30.0,
             headers={
                 "Accept": "application/vnd.github.raw+json",
@@ -85,6 +94,59 @@ class GitHubFetcher:
         """Enter the async context manager for the fetcher."""
 
         return self
+
+    @classmethod
+    def _validate_base_url(
+        cls,
+        base_url: str,
+        *,
+        allowed_domains: tuple[str, ...],
+    ) -> str:
+        """Allow only trusted GitHub API hosts for PAT-backed requests."""
+
+        parsed_url = urlparse(base_url)
+        hostname = parsed_url.hostname
+        if (
+            parsed_url.scheme != "https"
+            or hostname is None
+            or parsed_url.username is not None
+            or parsed_url.password is not None
+            or bool(parsed_url.query)
+            or bool(parsed_url.fragment)
+        ):
+            raise GitHubBaseUrlError(
+                "GitHub API base URL must be an HTTPS URL without "
+                "credentials, query parameters, or fragments."
+            )
+
+        if cls._is_allowed_base_url_host(
+            hostname=hostname,
+            allowed_domains=allowed_domains,
+        ):
+            return base_url
+
+        raise GitHubBaseUrlError(
+            "GitHub API base URL must use api.github.com, a "
+            "github.com subdomain, or an allow-listed domain."
+        )
+
+    @staticmethod
+    def _is_allowed_base_url_host(
+        hostname: str,
+        allowed_domains: tuple[str, ...],
+    ) -> bool:
+        """Check whether the base URL host is trusted for GitHub API use."""
+
+        normalized_allowed_domains = tuple(
+            domain.lower() for domain in allowed_domains if domain
+        )
+        if hostname == "api.github.com" or hostname.endswith(".github.com"):
+            return True
+
+        return any(
+            hostname == domain or hostname.endswith(f".{domain}")
+            for domain in normalized_allowed_domains
+        )
 
     async def __aexit__(
         self,

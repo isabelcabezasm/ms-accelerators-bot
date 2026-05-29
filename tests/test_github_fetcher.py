@@ -9,6 +9,7 @@ import httpx
 import pytest
 import src.ingestion.github_fetcher as github_fetcher_module
 from src.ingestion.github_fetcher import (
+    GitHubBaseUrlError,
     GitHubFetcher,
     GitHubRateLimitError,
     GitHubRepositoryUrlError,
@@ -314,6 +315,17 @@ def test_parse_repo_url_rejects_invalid_urls() -> None:
         GitHubFetcher.parse_repo_url("https://example.com/octo/demo")
 
 
+def test_fetcher_rejects_untrusted_base_url() -> None:
+    """Reject base URLs that could leak the GitHub PAT."""
+
+    with pytest.raises(GitHubBaseUrlError):
+        GitHubFetcher(
+            key_vault_url="https://vault.example.vault.azure.net/",
+            secret_client=FakeSecretClient(),
+            base_url="https://attacker.example/api/v3",
+        )
+
+
 def test_fetcher_builds_secret_client_from_default_credential(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -332,6 +344,8 @@ def test_fetcher_builds_secret_client_from_default_credential(
             seen["credential"] = credential
 
         def get_secret(self, name: str) -> FakeSecret:
+            """Return a stable secret for constructor-focused tests."""
+
             return FakeSecret("test-token")
 
     monkeypatch.setattr(
