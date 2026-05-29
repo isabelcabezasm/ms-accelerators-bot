@@ -168,6 +168,13 @@ variable "custom_domains" {
   default = {}
 }
 
+variable "cors_allowed_origin" {
+  description = "Allowed CORS origin for API routes. Set to the SWA custom domain (e.g. https://accelerators.example.com). Null disables CORS rule set."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "tags" {
   description = "Tags applied to resources created by the module."
   type        = map(string)
