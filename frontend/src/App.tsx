@@ -1,30 +1,65 @@
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { FluentProvider, webLightTheme } from "@fluentui/react-components";
+import { AuthProvider } from "./auth";
+import { Header, Footer, ProtectedRoute } from "./components";
 import {
-  Button,
-  FluentProvider,
-  Title1,
-  webLightTheme,
-} from "@fluentui/react-components";
+  LandingPage,
+  ChatPage,
+  HistoryPage,
+  ProfilePage,
+  TermsPage,
+  PrivacyPage,
+} from "./pages";
 
 function App(): JSX.Element {
   return (
-    <FluentProvider theme={webLightTheme}>
-      <main
-        style={{
-          display: "grid",
-          gap: "1rem",
-          margin: "0 auto",
-          maxWidth: "48rem",
-          padding: "3rem 1.5rem",
-        }}
-      >
-        <Title1>Microsoft Accelerators Finder</Title1>
-        <p>
-          React, Vite, Fluent UI, and MSAL.js are wired for the public site
-          scaffold.
-        </p>
-        <Button appearance="primary">Start exploring</Button>
-      </main>
-    </FluentProvider>
+    <BrowserRouter>
+      <FluentProvider theme={webLightTheme}>
+        <AuthProvider>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              minHeight: "100vh",
+            }}
+          >
+            <Header />
+            <div style={{ flex: 1 }}>
+              <Routes>
+                <Route path="/" element={<LandingPage />} />
+                <Route
+                  path="/chat"
+                  element={
+                    <ProtectedRoute>
+                      <ChatPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/history"
+                  element={
+                    <ProtectedRoute>
+                      <HistoryPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/profile"
+                  element={
+                    <ProtectedRoute>
+                      <ProfilePage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="/terms" element={<TermsPage />} />
+                <Route path="/privacy" element={<PrivacyPage />} />
+              </Routes>
+            </div>
+            <Footer />
+          </div>
+        </AuthProvider>
+      </FluentProvider>
+    </BrowserRouter>
   );
 }
 
