@@ -26,6 +26,25 @@ variable "project_name" {
   }
 }
 
+variable "managed_identity_principal_ids" {
+  description = "Managed identity principal IDs granted data-plane access to Cosmos DB and Blob Storage."
+  type        = set(string)
+  default     = []
+}
+
+variable "key_vault_managed_identity_object_ids" {
+  description = "Managed identity object IDs granted Key Vault access policies. Defaults to managed_identity_principal_ids when empty."
+  type        = set(string)
+  default     = []
+}
+
+variable "tenant_id" {
+  description = "Optional Azure Entra tenant ID override for the Key Vault."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "tags" {
   description = "Optional extra tags merged onto all managed resources."
   type        = map(string)

@@ -1,26 +1,31 @@
 variable "name" {
-  description = "Logical name for this module instance."
+  description = "Name of the Key Vault."
   type        = string
-  default     = null
-  nullable    = true
 }
 
 variable "location" {
-  description = "Azure region when the module provisions regional resources."
+  description = "Azure region for the Key Vault."
   type        = string
-  default     = null
-  nullable    = true
 }
 
 variable "resource_group_name" {
-  description = "Resource group name for resource-scoped services."
+  description = "Name of the resource group that will host the Key Vault."
   type        = string
-  default     = null
-  nullable    = true
+}
+
+variable "tenant_id" {
+  description = "Azure Entra tenant ID for the Key Vault and its access policies."
+  type        = string
+}
+
+variable "managed_identity_object_ids" {
+  description = "Managed identity object IDs granted Key Vault access."
+  type        = set(string)
+  default     = []
 }
 
 variable "tags" {
-  description = "Tags applied to resources created by the module."
+  description = "Tags applied to the Key Vault."
   type        = map(string)
   default     = {}
 }
