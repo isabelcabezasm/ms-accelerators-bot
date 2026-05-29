@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 
 from src.api.config import get_settings
+from src.api.routes.search import router as search_router
 from src.shared.models import HealthResponse
 
 
@@ -14,6 +15,7 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version=settings.app_version,
     )
+    app.include_router(search_router)
 
     @app.get("/healthz", response_model=HealthResponse, tags=["health"])
     def healthz() -> HealthResponse:
