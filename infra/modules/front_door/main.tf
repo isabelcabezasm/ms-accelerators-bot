@@ -134,7 +134,7 @@ resource "azurerm_cdn_frontdoor_firewall_policy" "this" {
       # Use "/chat/" prefix (not "/chat") to avoid matching unrelated paths
       # like /chatbot or /chatroom. Exact "/chat" path is also covered by
       # the /chat/* API route pattern.
-      match_values       = ["/chat/"]
+      match_values = ["/chat/"]
     }
   }
 

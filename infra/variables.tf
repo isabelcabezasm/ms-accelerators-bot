@@ -76,6 +76,10 @@ variable "front_door_response_timeout_seconds" {
 
 variable "front_door_endpoint_name" {
   description = "Optional globally unique Front Door endpoint name override."
+  type        = string
+  default     = null
+  nullable    = true
+}
 
 variable "external_id_additional_spa_redirect_uris" {
   description = "Additional redirect URIs for the React SPA beyond localhost and the optional production hostname."
@@ -143,6 +147,7 @@ variable "front_door_custom_domains" {
     cdn_frontdoor_secret_id = optional(string)
   }))
   default = {}
+}
 
 variable "external_id_frontend_hostname" {
   description = "Optional production hostname for the React frontend. When set, https://<hostname> is added as a redirect URI."
@@ -244,10 +249,4 @@ variable "external_id_user_flows" {
       methods = ["email_otp", "sms"]
     }
   }
-}
-
-variable "managed_identity_principal_ids" {
-  description = "Managed identity principal IDs that should receive service-level RBAC on AI Search and Azure OpenAI."
-  type        = list(string)
-  default     = []
 }

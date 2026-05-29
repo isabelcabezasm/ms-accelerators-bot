@@ -14,8 +14,8 @@ output "identity_principal_id" {
 }
 
 output "managed_identity_role_assignment_ids" {
-  description = "Role assignment IDs granting managed identities Search Index Data Reader."
-  value       = { for principal_id, assignment in azurerm_role_assignment.index_data_reader : principal_id => assignment.id }
+  description = "Role assignment IDs granting managed identities Search Index Data Contributor."
+  value       = { for principal_id, assignment in azurerm_role_assignment.index_data_contributor : principal_id => assignment.id }
 }
 
 output "name" {

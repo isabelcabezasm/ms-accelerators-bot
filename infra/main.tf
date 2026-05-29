@@ -38,14 +38,10 @@ locals {
   key_vault_name                        = substr("${replace(local.name_prefix, "-", "")}kv", 0, 24)
   key_vault_managed_identity_object_ids = length(var.key_vault_managed_identity_object_ids) > 0 ? var.key_vault_managed_identity_object_ids : var.managed_identity_principal_ids
   key_vault_tenant_id                   = coalesce(var.tenant_id, data.azurerm_client_config.current.tenant_id)
-
-  name_prefix         = lower(join("-", [var.project_name, var.environment]))
-  compute_name_prefix = substr(replace(local.name_prefix, "-", ""), 0, 12)
-  unique_suffix       = substr(md5(join("-", [var.project_name, var.environment, var.location])), 0, 6)
-
-  name_prefix         = lower(join("-", [var.project_name, var.environment]))
-  search_service_name = substr("${local.name_prefix}-search", 0, 60)
-  openai_account_name = substr(lower(replace("${var.project_name}${var.environment}aoai", "-", "")), 0, 24)
+  compute_name_prefix                   = substr(replace(local.name_prefix, "-", ""), 0, 12)
+  unique_suffix                         = substr(md5(join("-", [var.project_name, var.environment, var.location])), 0, 6)
+  search_service_name                   = substr("${local.name_prefix}-search", 0, 60)
+  openai_account_name                   = substr(lower(replace("${var.project_name}${var.environment}aoai", "-", "")), 0, 24)
   common_tags = merge(
     {
       environment = var.environment
@@ -80,6 +76,7 @@ module "monitoring" {
   location            = var.location
   resource_group_name = module.resource_group.name
   tags                = local.common_tags
+}
 
 module "cosmos" {
   source = "./modules/cosmos"
@@ -90,6 +87,9 @@ module "cosmos" {
   database_name                  = local.cosmos_database_name
   container_name                 = local.cosmos_container_name
   partition_key_path             = "/userId"
+  managed_identity_principal_ids = var.managed_identity_principal_ids
+  tags                           = local.common_tags
+}
 
 module "search" {
   source = "./modules/search"
@@ -97,7 +97,7 @@ module "search" {
   name                           = local.search_service_name
   location                       = var.location
   resource_group_name            = module.resource_group.name
-  managed_identity_principal_ids = var.managed_identity_principal_ids
+  managed_identity_principal_ids = tolist(var.managed_identity_principal_ids)
   tags                           = local.common_tags
 }
 
@@ -121,6 +121,7 @@ module "keyvault" {
   tenant_id                   = local.key_vault_tenant_id
   managed_identity_object_ids = local.key_vault_managed_identity_object_ids
   tags                        = local.common_tags
+}
 
 module "container_app" {
   source = "./modules/container_app"
@@ -148,6 +149,7 @@ module "swa" {
   location            = var.location
   resource_group_name = module.resource_group.name
   tags                = local.common_tags
+}
 
 module "front_door" {
   count = var.front_door_enabled ? 1 : 0
@@ -164,6 +166,7 @@ module "front_door" {
   container_app_origin     = var.front_door_container_app_origin
   custom_domains           = var.front_door_custom_domains
   tags                     = local.common_tags
+}
 
 module "external_id" {
   source = "./modules/external_id"
@@ -175,8 +178,8 @@ module "external_id" {
   sign_in_audience          = var.external_id_sign_in_audience
   spa_redirect_uris         = local.external_id_spa_redirect_uris
   social_identity_providers = var.external_id_social_identity_providers
-  tags                      = local.common_tags
   user_flows                = var.external_id_user_flows
+  tags                      = local.common_tags
 }
 
 module "openai" {
@@ -186,6 +189,6 @@ module "openai" {
   custom_subdomain_name          = local.openai_account_name
   location                       = var.location
   resource_group_name            = module.resource_group.name
-  managed_identity_principal_ids = var.managed_identity_principal_ids
+  managed_identity_principal_ids = tolist(var.managed_identity_principal_ids)
   tags                           = local.common_tags
 }
