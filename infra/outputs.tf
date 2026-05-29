@@ -32,6 +32,21 @@ output "name_prefix" {
   value       = local.name_prefix
 }
 
+output "openai_deployment_names" {
+  description = "Azure OpenAI deployment names keyed by logical purpose."
+  value       = module.openai.deployment_names
+}
+
+output "openai_endpoint" {
+  description = "Endpoint of the Azure OpenAI account."
+  value       = module.openai.endpoint
+}
+
+output "openai_id" {
+  description = "Resource ID of the Azure OpenAI account."
+  value       = module.openai.id
+}
+
 output "resource_group_id" {
   description = "Resource ID of the shared resource group."
   value       = module.resource_group.id
@@ -136,5 +151,26 @@ output "workload_urls" {
     external_id_spa_application       = module.external_id.spa.id
     external_id_api_service_principal = module.external_id.api.service_principal_id
     external_id_spa_service_principal = module.external_id.spa.service_principal_id
+
+    openai         = module.openai.id
+    openai_models  = module.openai.deployment_ids
+    resource_group = module.resource_group.id
+    search         = module.search.id
+    search_index   = module.search.placeholder_index_id
   }
+}
+
+output "search_endpoint" {
+  description = "Endpoint of the Azure AI Search service."
+  value       = module.search.endpoint
+}
+
+output "search_id" {
+  description = "Resource ID of the Azure AI Search service."
+  value       = module.search.id
+}
+
+output "search_index_name" {
+  description = "Name of the placeholder hybrid search index."
+  value       = module.search.placeholder_index_name
 }

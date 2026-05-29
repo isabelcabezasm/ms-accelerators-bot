@@ -42,6 +42,10 @@ locals {
   name_prefix         = lower(join("-", [var.project_name, var.environment]))
   compute_name_prefix = substr(replace(local.name_prefix, "-", ""), 0, 12)
   unique_suffix       = substr(md5(join("-", [var.project_name, var.environment, var.location])), 0, 6)
+
+  name_prefix         = lower(join("-", [var.project_name, var.environment]))
+  search_service_name = substr("${local.name_prefix}-search", 0, 60)
+  openai_account_name = substr(lower(replace("${var.project_name}${var.environment}aoai", "-", "")), 0, 24)
   common_tags = merge(
     {
       environment = var.environment
@@ -86,6 +90,13 @@ module "cosmos" {
   database_name                  = local.cosmos_database_name
   container_name                 = local.cosmos_container_name
   partition_key_path             = "/userId"
+
+module "search" {
+  source = "./modules/search"
+
+  name                           = local.search_service_name
+  location                       = var.location
+  resource_group_name            = module.resource_group.name
   managed_identity_principal_ids = var.managed_identity_principal_ids
   tags                           = local.common_tags
 }
@@ -166,4 +177,15 @@ module "external_id" {
   social_identity_providers = var.external_id_social_identity_providers
   tags                      = local.common_tags
   user_flows                = var.external_id_user_flows
+}
+
+module "openai" {
+  source = "./modules/openai"
+
+  name                           = local.openai_account_name
+  custom_subdomain_name          = local.openai_account_name
+  location                       = var.location
+  resource_group_name            = module.resource_group.name
+  managed_identity_principal_ids = var.managed_identity_principal_ids
+  tags                           = local.common_tags
 }
